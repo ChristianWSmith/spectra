@@ -1,16 +1,12 @@
 <script>
   import EmptyNote from '../../components/EmptyNote.svelte';
-  import { DASH } from '../../builtinhelpers.js';
-  import ErrorBanner from '../../components/ErrorBanner.svelte';
+  import { DASH, S, getClutches, entryLoopSpanAround, matchRecord } from '../../builtinhelpers.js';
+  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
   // Combat · Clutches. The detected 1vN
   // situations of the match (size, player, outcome, bomb state, HP left).
   // The won / lost toggles select which outcomes are listed: won ON and lost
   // OFF by default. It reads the match from `context`; the loop-length pref
   // stays a plain pref (ruling 33).
-  import * as S from '../../strings/index.js';
-  import { getClutches } from '../../services.js';
-  import { entryLoopSpanAround } from '../../nav.js';
-  import { matchRecord } from '../../viewstate.svelte.js';
   import EventPlay from '../../components/EventPlay.svelte';
   import ProfileLink from '../../components/ProfileLink.svelte';
   import { combatPanel } from './combatpanel.svelte.js';
@@ -91,9 +87,6 @@
   const replay = combat.replay;
 </script>
 
-{#if error}
-  <ErrorBanner ondismiss={combat.dismiss} dismissLabel={S.combat.dismissError}>{error}</ErrorBanner>
-{/if}
 
 <div class="comb-sec">
   <h2>{S.combat.clutchesHeading}</h2>
@@ -117,7 +110,9 @@
       {S.combat.lostToggle}
     </button>
   </div>
-  {#if clutches.length === 0 && !error}
+  {#if clutches.length === 0 && error}
+    <EmptyNote>{S.combat.clutchesUnavailable}</EmptyNote>
+  {:else if clutches.length === 0}
     <EmptyNote>{S.combat.noClutches}</EmptyNote>
   {:else if shownClutches.length === 0}
     <EmptyNote>{clutchEmptyText}</EmptyNote>
@@ -160,6 +155,7 @@
                   steam={c.steamId}
                   name={c.name || DASH}
                   nav={spectra.navigate}
+                  variant="name-link"
                   cls={playerRoundCls(c.round, c.steamId, c.name)}
                   title={S.combat.openPlayerProfile}
                 />
@@ -173,13 +169,13 @@
                 {#if c.bombState && c.bombState !== 'none'}
                   <span class="chip">{S.combat.bombPrefix}{c.bombState}</span>
                 {:else}
-                  <span class="muted">—</span>
+                  <span class="muted">{DASH}</span>
                 {/if}
               </td>
               <td class="num">{c.hpLeft}</td>
             </tr>
           {:else}
-            <tr><td colspan="7" class="muted">{clutchEmptyText}</td></tr>
+            <EmptyTableRow colspan={7} text={clutchEmptyText} />
           {/each}
         </tbody>
       </table>

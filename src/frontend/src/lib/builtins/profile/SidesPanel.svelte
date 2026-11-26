@@ -1,20 +1,18 @@
 <script>
+  import { fmt1, fmt2, fmtPercent, S } from '../../builtinhelpers.js';
   import EmptyTableRow from '../../components/EmptyTableRow.svelte';
   import { splitTable } from './splittable.svelte.js';
   // CT / T breakdown (builtin profile panel): rounds, round win %, ADR, KAST %
   // and K/D per side, each cell one stored partitioned read for the context's
   // player (the dim is the side).
-  import { errText } from '../../services.js';
-  import { fmt1, fmt2, fmtPercent } from '../../fmt.js';
   import MetricTd from '../../components/MetricTd.svelte';
-  import * as S from '../../strings/index.js';
 
   let { spectra, context } = $props();
   const steamId = $derived(context.steamId);
 
   const SEEDS = ['side_rounds', 'side_win_pct', 'side_adr', 'side_kast', 'side_kd'];
 
-  const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS, errText }));
+  const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS }));
   const sweep = table.sweep;
   const defs = $derived(table.defs);
   const reads = $derived(table.reads);

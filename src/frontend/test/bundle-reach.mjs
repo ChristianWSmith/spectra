@@ -23,6 +23,10 @@ export function reachesSvelte(absPath, seen = new Set()) {
   for (const m of text.matchAll(/from '(\.{1,2}\/[^']+)'/g)) {
     if (hit) break;
     const target = resolve(dirname(absPath), m[1]);
+    // A runes module (one that uses $state, $derived, $effect or $props) has to be compiled, so a
+    // module that imports one is bundled with it. A plain module that imports a runes-free .svelte.js
+    // (services.js reads workstate.svelte.js) stays where it is.
+    if (target.endsWith('.svelte.js') && /\$(state|derived|effect|props)\b/.test(readFileSync(target, 'utf8').replace(/\/\/.*$/gm, ''))) hit = true;
     if (target.endsWith('.js') && reachesSvelte(target, seen)) hit = true;
   }
   reaching.set(absPath, hit);

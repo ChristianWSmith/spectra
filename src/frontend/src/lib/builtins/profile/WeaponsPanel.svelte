@@ -1,16 +1,13 @@
 <script>
+  import { compareAsc, fmtInt, S } from '../../builtinhelpers.js';
   import EmptyTableRow from '../../components/EmptyTableRow.svelte';
-  import { compareAsc } from '../../sortstate.js';
   import { splitTable } from './splittable.svelte.js';
   // Weapons (builtin profile panel): kills, damage and headshots per weapon,
   // each cell one stored partitioned read for the context's player (the dim
   // is the weapon). Top rows by kills, then damage, then name.
-  // Unverified before the wipe: weapon damage is a tick-join builtin (ruling 24).
-  import { errText } from '../../services.js';
-  import { fmtInt } from '../../fmt.js';
+  // Weapon damage is a tick-join builtin (ruling 24).
   import MetricTd from '../../components/MetricTd.svelte';
   import { dimsOf } from './shared.js';
-  import * as S from '../../strings/index.js';
 
   let { spectra, context } = $props();
   const steamId = $derived(context.steamId);
@@ -18,7 +15,7 @@
   const SEEDS = ['weapon_kills', 'weapon_damage', 'weapon_headshots'];
   const TOP = 8;
 
-  const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS, errText }));
+  const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS }));
   const sweep = table.sweep;
   const defs = $derived(table.defs);
   const reads = $derived(table.reads);

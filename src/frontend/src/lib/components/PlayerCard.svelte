@@ -1,4 +1,5 @@
 <script>
+  import { DASH } from '../fmt.js';
   // PlayerCard — ONE player's live card beside the replay render area:
   // name (+ the voice live dot), HP + bar with the armor/helmet chip at
   // the row's right edge, the equipped weapon (icon + mag/reserve ammo —
@@ -89,6 +90,7 @@
     weaponName as weaponNameOf,
   } from '../replay/playercard.js';
   import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
+  import { openRow, CONTROL_SELECTOR } from '../keys.js';
 
   let {
     player = {},
@@ -111,7 +113,7 @@
 
   // Display name: roster name, else the steam id (a nameless row still
   // identifies its player), else the honest placeholder.
-  const name = $derived(player?.name || player?.steamId || '—');
+  const name = $derived(player?.name || player?.steamId || DASH);
   const hasState = $derived(state != null);
   const isDead = $derived(!!dead || alive === false);
 
@@ -121,7 +123,7 @@
   const armor = $derived(state ? state.armor : null);
   const chip = $derived(armorChip(state));
   const weapon = $derived(weaponNameOf(state));
-  const ammo = $derived(weapon ? ammoText(state) : '—');
+  const ammo = $derived(weapon ? ammoText(state) : DASH);
   const money = $derived(moneyText(state));
   const util = $derived(utilityOf(state ? state.inventory : null));
   // The bomb is checked INDEPENDENTLY of utilityOf (which deliberately
@@ -161,7 +163,7 @@
   // between modes.
   const held = $derived(heldItemOf(state));
   const main = $derived(held ? mainOf(state) : null);
-  const mainAmmo = $derived(held ? mainAmmoText(state) : '—');
+  const mainAmmo = $derived(held ? mainAmmoText(state) : DASH);
   const heldIconSrc = $derived(held ? iconSrc(held) : null);
   const mainIconSrc = $derived(main ? iconSrc(main) : null);
 
@@ -208,17 +210,7 @@
   // activation. Enter/Space mirror the click; they are redundant with
   // the Replay view's own follow controls (F, 1-9/0, the follow
   // popover) — never a second source of follow state.
-  function onCardClick(e) {
-    if (e.target instanceof Element && e.target.closest('button, a, input')) return;
-    onFollow();
-  }
-
-  function onCardKey(e) {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    if (e.target instanceof Element && e.target.closest('button, a, input')) return;
-    e.preventDefault();
-    onFollow();
-  }
+  const cardRow = openRow(() => onFollow(), { ignore: CONTROL_SELECTOR, enterOnly: true });
 </script>
 
 <div
@@ -232,8 +224,7 @@
   title={hasState ? undefined : S.common.playerCardNoStateTitle}
   role="button"
   tabindex="0"
-  onclick={onCardClick}
-  onkeydown={onCardKey}
+  {...cardRow}
 >
   <div class="pc-head">
     <span class="pc-name" title={name}>{name}</span>
@@ -262,7 +253,7 @@
   </div>
 
   <div class="pc-hp-row">
-    <span class="pc-num pc-hp" class:pc-unknown={band === 'unknown'} title={hpTitle}>{hp ?? '—'}</span>
+    <span class="pc-num pc-hp" class:pc-unknown={band === 'unknown'} title={hpTitle}>{hp ?? DASH}</span>
     <span class="pc-bar" class:pc-unknown={band === 'unknown'} aria-hidden="true">
       {#if pct != null}<span class="pc-bar-fill pc-fill-{band}" style="width: {pct}%"></span>{/if}
     </span>
@@ -275,7 +266,7 @@
       {:else}
         <span class="pc-fallback">{chip.text}</span>
       {/if}
-      <span class="pc-num pc-armor-val">{armor ?? '—'}</span>
+      <span class="pc-num pc-armor-val">{armor ?? DASH}</span>
     </span>
   </div>
 

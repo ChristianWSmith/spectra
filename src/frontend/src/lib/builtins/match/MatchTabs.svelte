@@ -18,12 +18,7 @@
   // the active tab with its select, `tab` and `ontab`, which only the URL can
   // supply (see the note at `tab` below).
   import { onMount } from 'svelte';
-  import { loadLoopSecs } from '../../loopsecs.js';
-  import * as S from '../../strings/index.js';
-  import { MATCH_TABS, matchTabSlug } from '../../router.js';
-  import { getPref } from '../../services.js';
-  import { LOOP_SECS_DEFAULT } from '../../nav.js';
-  import { seed, remember, matchKey } from '../../viewstate.svelte.js';
+  import { matchPath, matchTab, loadLoopSecs, S, MATCH_TABS, matchTabSlug, LOOP_SECS_DEFAULT, seed, remember, matchKey } from '../../builtinhelpers.js';
 
   let {
     spectra,
@@ -51,7 +46,7 @@
   // and compare pages resolve it to this tab (plain match/:id for Overview).
   // The first tab of the route table is the Overview, the one plain match/:id route.
   const backPath = $derived(
-    tab === MATCH_TABS[0] ? `match/${matchId}` : `match/${matchId}/${matchTabSlug(tab)}`,
+    tab === MATCH_TABS[0] ? matchPath(matchId) : matchTab(matchId, matchTabSlug(tab)),
   );
   const panelProps = $derived({ back: backPath });
 

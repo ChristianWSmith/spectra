@@ -46,6 +46,7 @@ import './compile-worker-node.mjs';
 // runs under `node --conditions browser test/player-card.dom.mjs` — it pins the
 // browser condition itself so `svelte` resolves to the client build)
 import { registerHooks } from 'node:module';
+import { copyClosure } from './copy-closure.mjs';
 
 // svelte's package exports pick the SERVER build without the `browser`
 // condition (mount() then throws "lifecycle_function_unavailable"), so the
@@ -120,7 +121,9 @@ const svelteCompile = (src, filename, out, opts = {}) =>
 // components are compiled with css:'injected' so their <style> blocks
 // land in the document — the outline-geometry checks below read the real
 // rules the browser would apply.
-for (const rel of ['rounds.js', 'fmt.js', 'players.js', 'sideparity.js', 'teams.js']) {
+// PlayerCard imports the strings catalog and builtinhelpers (DASH): both come in by closure.
+copyClosure({ dir, entries: ['strings/index.js', 'builtinhelpers.js'] });
+for (const rel of ['rounds.js', 'fmt.js', 'players.js', 'sideparity.js', 'teams.js', 'keys.js']) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
 for (const rel of ['landmarks.js', 'playercard.js', 'loadout.js', 'bullets.js', 'state.js']) {
@@ -1116,16 +1119,16 @@ check(
 );
 key(cardJk, 'Enter');
 check('Enter on the card root fires onFollow', followsJk.length === 1, JSON.stringify(followsJk));
-// dispatchEvent returns false when preventDefault ran (Space would
-// otherwise scroll the page under the card).
+// The card holds a nested control (the mute button), so it is Enter-only (openRow enterOnly):
+// Space keeps its default action and never follows.
 const spaceOk = key(cardJk, ' ');
 check(
-  'Space on the card root fires onFollow AND is preventDefault-ed',
-  followsJk.length === 2 && spaceOk === false,
+  'Space on the card root does not fire onFollow (Enter-only: the card holds a control)',
+  followsJk.length === 1 && spaceOk === true,
   `${JSON.stringify(followsJk)} / defaultPrevented=${!spaceOk}`,
 );
 key(cardJk, 'x');
-check('any other key never fires follow', followsJk.length === 2, JSON.stringify(followsJk));
+check('any other key never fires follow', followsJk.length === 1, JSON.stringify(followsJk));
 const followsJk2 = [];
 const rootJk2 = await show({
   card: { ...fullCard, onFollow: () => followsJk2.push('f'), onToggleMute: () => {} },

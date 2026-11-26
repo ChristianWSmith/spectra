@@ -142,6 +142,7 @@
   let templates = $state([]);
   let loading = $state(true);
   let listError = $state('');
+  let pickerError = $state('');
   let saveError = $state('');
   let saving = $state(false);
   let preview = $state(null); // rendered draft text, null = nothing run yet
@@ -360,8 +361,9 @@
         const ready = (rows || []).filter((r) => r.status === 'ready' || r.status === '');
         matches = ready.length ? ready : rows || [];
       })
-      .catch(() => {
+      .catch((e) => {
         matches = [];
+        pickerError = errText(e);
       });
   });
 
@@ -375,8 +377,9 @@
         players = listedPlayers(rows) || [];
         if (players.length && !players.some((p) => p.steamId === steamId)) steamId = '';
       })
-      .catch(() => {
+      .catch((e) => {
         players = [];
+        pickerError = errText(e);
       });
   });
 
@@ -393,8 +396,9 @@
           const maxRound = (rs || []).reduce((m, r) => Math.max(m, r.number), 0);
           if (roundNo > maxRound) roundNo = Math.max(1, maxRound);
         })
-        .catch(() => {
+        .catch((e) => {
           rounds = [];
+          pickerError = errText(e);
         });
       return;
     }
@@ -458,6 +462,12 @@
     <HelpButton section="reports-builder" {openDocs} />
   </header>
 
+  {#if pickerError}
+    <p class="error" role="alert">
+      {pickerError}
+      <button class="btn small ghost" aria-label={S.common.dismissErrorLine} title={S.common.dismissErrorLine} onclick={() => (pickerError = '')}><span class="codicon codicon-close" aria-hidden="true"></span></button>
+    </p>
+  {/if}
   {#if listError}
     <p class="error" role="alert">
       {listError}
@@ -696,6 +706,7 @@
         {/if}
         {#if form.scope === 'player' || form.scope === 'profile'}
           <PlayerPicker
+            onerror={(e) => (pickerError = errText(e))}
             {players}
             value={steamId}
             id="rb-player"

@@ -465,7 +465,7 @@ root = await mountPanel({ source: upanels.UTILITY_SOURCE, context: CTX, props: {
 click(root.querySelector('.util-nade button.btn'));
 check('a throw’s ▶ opens the replay at the throw, its loop, the thrower followed, back to the tab',
   navCalls.at(-1) === `/replay/9?tick=1640&loop=1320,1960&follow=${ALPHA}&back=match/9/utility`, navCalls.at(-1));
-click(root.querySelector('.util-nade .comb-name-btn'));
+click(root.querySelector('.util-nade .name-link'));
 check('a thrower’s name opens the profile', navCalls.at(-1) === '/player/' + ALPHA, navCalls.at(-1));
 
 // --- G. a metric still calculating shows a dash -------------------------------------------------

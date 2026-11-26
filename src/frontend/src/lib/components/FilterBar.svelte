@@ -38,7 +38,8 @@
   } from '../replay/landmarks.js';
   import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
-  let { filter = {}, onchange = () => {}, id = 0, showReset = true } = $props();
+  // onerror (optional) receives a failed scoreboard read: the weapon list then keeps its common weapons.
+  let { filter = {}, onchange = () => {}, id = 0, showReset = true, onerror = () => {} } = $props();
 
   // Fallback weapon list — the canonical demoinfocs
   // EquipmentType.String() spellings, i.e. EXACTLY what events.weapon
@@ -177,7 +178,9 @@
       .then((sb) => {
         if (live) players = listedPlayers(sb) || [];
       })
-      .catch(() => {});
+      .catch((e) => {
+        if (live) onerror(e);
+      });
     return () => (live = false);
   });
 

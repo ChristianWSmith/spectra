@@ -3,11 +3,11 @@
 // the message, never a throw, so one broken metric shows its own failed chip
 // and the rest of the panel still renders.
 //
-//   const reads = await readMetrics(spectra, ['kills', 'deaths'], errText);
+//   const reads = await spectra.readMetrics(['kills', 'deaths']);  // bound by the frame
 //   reads.get('kills').state   // 'fresh' | 'processing' | … | 'failed'
 
 // failedRead is the read a panel holds for a metric whose read threw.
-export function failedRead(e, errText) {
+function failedRead(e, errText) {
   return { state: 'failed', error: errText(e), value: null, rows: [] };
 }
 

@@ -11,11 +11,7 @@
 //   });
 
 import { onMount } from 'svelte';
-import { errText } from '../../services.js';
-import { loadLoopSecs } from '../../loopsecs.js';
-import { replayAt, LOOP_SECS_DEFAULT } from '../../nav.js';
-import { roundSideClassOf } from '../../builtinhelpers.js';
-import { whileCurrent } from '../../current.js';
+  import { roundSideClassOf, openReplay, matchTab, errText, loadLoopSecs, LOOP_SECS_DEFAULT, whileCurrent } from '../../builtinhelpers.js';
 import { loadCombatSide } from './combatdata.js';
 
 export function combatPanel(getSpectra, getMatchId, { read, apply }) {
@@ -45,7 +41,10 @@ export function combatPanel(getSpectra, getMatchId, { read, apply }) {
           error = '';
         })
         .catch((e) => {
-          if (isCurrent()) error = errText(e);
+          if (!isCurrent()) return;
+          // A read failure is the frame's banner (no retry here): the error stays for the empty line.
+          error = errText(e);
+          getSpectra().report(e);
         });
     }),
   );
@@ -53,15 +52,12 @@ export function combatPanel(getSpectra, getMatchId, { read, apply }) {
   // Deep link into the replay at a tick, back to this panel's tab.
   function replay(tick, loop, follow) {
     const matchId = getMatchId();
-    replayAt(getSpectra(), matchId, { tick, loop, follow, back: `match/${matchId}/combat` });
+    openReplay(getSpectra(), matchId, { tick, loop, follow, back: matchTab(matchId, 'combat') });
   }
 
   return {
     get error() {
       return error;
-    },
-    dismiss() {
-      error = '';
     },
     get players() {
       return players;

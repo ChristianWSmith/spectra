@@ -53,9 +53,9 @@ export const RUNTIME_SPECIFIERS = Object.freeze(Object.keys(RUNTIME_MODULES));
 
 // --- built-in helpers ----------------------
 // A BUILT-IN panel may import a small, curated set of app helpers. A USER
-// component may import none (the save gate refuses every import of a user
-// component, at its line). Each helper module is listed here by its path
-// from the frontend root, with the NAMES a built-in may take from it and a
+// component may import no app module (only the public runtime modules in
+// RUNTIME_MODULES above; the save gate refuses every other import, at its
+// line). Each helper module is listed here by its path from the frontend root, with the NAMES a built-in may take from it and a
 // line on what each name is for. A name not listed is refused at save
 // (checkComponentSource with a builtin directory). Adding a helper or a name
 // is a review: add it here, document it, and the coverage test in
@@ -95,6 +95,7 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/services.js': {
     load: () => providedHelper('src/lib/services.js'),
     names: {
+      getHeatmapKD: 'the heatmap read for the K/D raster',
       errText: 'the one error-text normalizer (a rejection to a sentence)',
       listMetrics: 'the metric definitions (read)',
       listPlayers: 'the player list (read)',
@@ -116,9 +117,7 @@ export const BUILTIN_HELPERS = Object.freeze({
       getMetricComputeState: 'a metric’s compute state (read)',
       getPlayerRefs: 'player references for a report (read)',
       renderReport: 'a report rendered from stored values (read)',
-      subscribeMetricProgress: 'subscribe to metric progress (event)',
       onMetricDone: 'listen for a metric finishing (event)',
-      onEvent: 'listen for a backend event (event)',
     },
   },
   'src/lib/componentruntime/reads.js': {
@@ -162,8 +161,6 @@ export const BUILTIN_HELPERS = Object.freeze({
       metricPresentation: 'how a metric state is shown',
       metricStateTitle: 'the hover title of a metric state',
       liveMetricState: 'a metric’s live state',
-      metricProgressFrac: 'a metric computation’s progress fraction',
-      metricProgressStage: 'a metric computation’s progress stage',
     },
   },
   'src/lib/teams.js': {
@@ -196,12 +193,10 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/nav.js': {
     load: () => import('../nav.js'),
     names: {
-      replayAt: 'open a match’s replay at a tick (looped when asked), back to a route',
       replayHash: 'the route to a replay at a point',
       entryLoopAround: 'the loop span around a replay entry',
       entryLoopSpanAround: 'the loop span around a replay entry, as a span',
       LOOP_SECS_DEFAULT: 'the default loop length in seconds',
-      prefLoopSecs: 'the loop length the user prefers',
     },
   },
   'src/lib/download.js': {
@@ -276,7 +271,6 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/sortstate.js': {
     load: () => import('../sortstate.js'),
     names: {
-      nextSort: 'a table’s sort state after a click on a column',
       compareAsc: 'the ascending order of two values (-1, 0, 1)',
     },
   },
@@ -285,6 +279,7 @@ export const BUILTIN_HELPERS = Object.freeze({
     names: {
       activateOnKey: 'keyboard activation of a clickable row (Enter, and Space unless enterOnly)',
       openRow: 'a clickable row’s handlers (click and keyboard), spread onto the row',
+      CONTROL_SELECTOR: 'the selector of the controls inside a row (their clicks are not the row’s)',
     },
   },
   'src/lib/current.js': {
@@ -294,13 +289,13 @@ export const BUILTIN_HELPERS = Object.freeze({
       whenCurrent: 'a promise callback that runs only while its load is current',
       loadForMatch: 'the effect body of a panel that loads for the match and applies the result while current',
       latestOnly: 'a runner for one kind of load: only the newest load’s result applies',
+      loadThen: 'a panel load: the result applies while current, a failure goes to the frame (or its own handler)',
     },
   },
   'src/lib/metricreads.js': {
     load: () => import('../metricreads.js'),
     names: {
       readMetrics: 'read several stored metrics by name, a failed read shown as its own state',
-      failedRead: 'the read a metric whose read threw is shown as',
     },
   },
   'src/lib/metricslive.svelte.js': {
@@ -355,7 +350,7 @@ export const BUILTIN_HELPERS = Object.freeze({
       openRoundsTab: 'open a match’s rounds tab at a round',
       openReplay: 'open a match’s replay with its route extras (tick, loop, follow, back)',
       openMatch: 'open a match’s view',
-      SQL_ROUNDS: 'the match rounds read',
+      SQL_ROUND_SPANS: 'the match rounds read (number, winner and span of each round)',
       roundsOf: 'the round objects of a rounds read',
       rosterOf: 'the roster objects of a roster read',
       namesOf: 'the team names of a teams read over a roster',
@@ -403,6 +398,80 @@ export const BUILTIN_HELPERS = Object.freeze({
       teamNames: 'the team display names',
       teamStartClass: 'the team colour class of a side at the start',
       winnerTeamKey: 'the team that won a round',
+      compareAsc: 'from sortstate.js',
+      latestOnly: 'from current.js',
+      loadForMatch: 'from current.js',
+      loadThen: 'from current.js',
+      whileCurrent: 'from current.js',
+      errText: 'from services.js',
+      evictDemoCopy: 'from services.js',
+      getCareerTrend: 'from services.js',
+      getClutches: 'from services.js',
+      getEntitySummary: 'from services.js',
+      getHeatmap: 'from services.js',
+      getKillTags: 'from services.js',
+      getMatch: 'from services.js',
+      getMetricComputeState: 'from services.js',
+      getMetricValuesForMatch: 'from services.js',
+      getPlayerRefs: 'from services.js',
+      getProfile: 'from services.js',
+      getProvenance: 'from services.js',
+      getRounds: 'from services.js',
+      getScoreboard: 'from services.js',
+      getVoicePresence: 'from services.js',
+      listMetrics: 'from services.js',
+      listPlayers: 'from services.js',
+      listReportTemplates: 'from services.js',
+      renderReport: 'from services.js',
+      listedPlayers: 'from players.js',
+      matchKey: 'from viewstate.svelte.js',
+      matchRecord: 'from viewstate.svelte.js',
+      remember: 'from viewstate.svelte.js',
+      seed: 'from viewstate.svelte.js',
+      DEFAULT_CARDS: 'from metricorder.js',
+      composedSequence: 'from metricorder.js',
+      inSequence: 'from metricorder.js',
+      isRawId: 'from metricorder.js',
+      rawItems: 'from metricorder.js',
+      liveMetricState: 'from metricstate.js',
+      metricPresentation: 'from metricstate.js',
+      metricStateTitle: 'from metricstate.js',
+      liveMetrics: 'from metricslive.svelte.js',
+      downloadCanvasPNG: 'from download.js',
+      downloadText: 'from download.js',
+      economySource: 'from economysource.svelte.js',
+      fmtBytes: 'from fmt.js',
+      fmtDate: 'from fmt.js',
+      fmtDuration: 'from fmt.js',
+      fmtMetric: 'from fmt.js',
+      fmtPatch: 'from fmt.js',
+      fmtPercent: 'from fmt.js',
+      plural: 'from fmt.js',
+      CONTROL_SELECTOR: 'from keys.js',
+      openRow: 'from keys.js',
+      HEAT_CORE_KINDS: 'from heatkinds.js',
+      HEAT_GRENADE_DET_KINDS: 'from heatkinds.js',
+      HEAT_GRENADE_THROW_KINDS: 'from heatkinds.js',
+      heatKindLabel: 'from heatkinds.js',
+      heatRegionFilter: 'from heatkinds.js',
+      heatRegionTakesBBox: 'from heatkinds.js',
+      DEATH_STOPS: 'from heatramp.js',
+      HEAT_STOPS: 'from heatramp.js',
+      rampCss: 'from heatramp.js',
+      signedRampCss: 'from heatramp.js',
+      loadMapPack: 'from components/mapxform.js',
+      runWork: 'from workstate.svelte.js',
+      loadLoopSecs: 'from loopsecs.js',
+      LOOP_SECS_DEFAULT: 'from nav.js',
+      entryLoopSpanAround: 'from nav.js',
+      KILL_TAG_DIST_DEF: 'from definitions.js',
+      KILL_TAG_KIND_TITLES: 'from definitions.js',
+      MATCH_TABS: 'from router.js',
+      matchTabSlug: 'from router.js',
+      S: 'the strings catalog (S.area.key), the one copy every built-in reads',
+      isCounted: 'a helper the built-ins take from builtinhelpers',
+      fmt2: 'a helper the built-ins take from builtinhelpers',
+      getHeatmapKD: 'a helper the built-ins take from builtinhelpers',
     },
   },
   'src/lib/builtins/match/combatdata.js': {
@@ -428,6 +497,7 @@ export const BUILTIN_HELPERS = Object.freeze({
       loadSeeds: 'load the profile’s seed values (read)',
       loadSplit: 'load a breakdown’s catalog and its values for the player (read)',
       loadProfile: 'the metric catalog and one player’s profile, read together',
+      defaultCardDefs: 'the profile-scope definitions of the default career cards',
     },
   },
   'src/lib/builtins/reports/shared.js': {
@@ -458,6 +528,10 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/components/RetryButton.svelte': {
     load: () => import('../components/RetryButton.svelte'),
     names: { default: 'the button a panel shows beside a failed read, to load it again' },
+  },
+  'src/lib/components/SortTh.svelte': {
+    load: () => import('../components/SortTh.svelte'),
+    names: { default: 'a sortable table header cell (the view keeps its own sort state)' },
   },
   'src/lib/components/MetricTd.svelte': {
     load: () => import('../components/MetricTd.svelte'),
@@ -510,10 +584,6 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/components/HeatmapLayer.svelte': {
     load: () => import('../components/HeatmapLayer.svelte'),
     names: { default: 'a heatmap layer (a component)' },
-  },
-  'bindings/github.com/ChristianWSmith/spectra': {
-    load: () => import('../../../bindings/github.com/ChristianWSmith/spectra'),
-    names: { AnalyticsService: 'the analytics service the heatmap reads (read)' },
   },
 });
 
@@ -823,7 +893,3 @@ export function loadComponent(source, filename = 'Component.svelte', builtinDir 
   return promise;
 }
 
-// resetComponentCache empties the compiled-module cache (tests).
-export function resetComponentCache() {
-  cache.clear();
-}

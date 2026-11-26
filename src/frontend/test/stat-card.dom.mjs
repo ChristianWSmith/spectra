@@ -17,6 +17,7 @@ import { compile } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { copyClosure } from './copy-closure.mjs';
 
 // svelte's package exports pick the SERVER build without the `browser`
 // condition (mount() then throws "lifecycle_function_unavailable"), so
@@ -79,26 +80,13 @@ const svelteCompile = (src, filename, out) => {
   writeFileSync(out, compile(src, { filename, generate: 'client' }).js.code);
 };
 
-// Plain-ESM deps copied verbatim (same layout as the landmark-row driver):
-// ProfileLink → ../nav.js → router.js + replay/landmarks.js → rounds.js,
-// fmt.js/teams.js — landmarks' chat export helpers (teams → sideparity).
-for (const rel of ['rounds.js', 'router.js', 'nav.js', 'fmt.js', 'sideparity.js', 'teams.js']) {
-  writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
-}
-writeFileSync(
-  join(dir, 'replay', 'landmarks.js'),
-  readFileSync('src/lib/replay/landmarks.js', 'utf8'),
-);
-
-// ProfileLink now statically imports ../services.js for its hover
-// prefetch (warmProfile) — a no-op stub here (this driver never hovers).
-writeFileSync(join(dir, 'services.js'), 'export const warmProfile = () => {};\n');
-
-svelteCompile(
-  readFileSync('src/lib/components/ProfileLink.svelte', 'utf8'),
-  'ProfileLink.svelte',
-  join(dir, 'components', 'ProfileLink.js'),
-);
+// ProfileLink's imports (nav, strings, builtinhelpers, and the rest of their closure) are copied
+// by closure (test/copy-closure.mjs). services.js is the one module the closure cannot load here
+// (it reaches the Wails bindings), so a no-op stub stands in: this driver never hovers.
+copyClosure({
+  dir,
+  entries: ['components/ProfileLink.svelte', 'keys.js'],
+  });
 // StatCard carries no imports of its own — the ProfileLink comes in
 // through the harness's subSlot snippet.
 svelteCompile(

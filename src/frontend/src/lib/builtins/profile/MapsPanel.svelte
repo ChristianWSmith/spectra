@@ -1,24 +1,19 @@
 <script>
   import EmptyTableRow from '../../components/EmptyTableRow.svelte';
-  import { compareAsc } from '../../sortstate.js';
-  import { DASH } from '../../builtinhelpers.js';
-  import { openRow } from '../../keys.js';
+  import { DASH, compareAsc, openRow, fmt1, S } from '../../builtinhelpers.js';
   import { splitTable } from './splittable.svelte.js';
   // Per-map breakdown (builtin profile panel): matches, wins and ADR per map,
   // each cell one stored partitioned read for the context's player (the dim
   // is the map). A row opens the Library filtered to this player and map.
-  import { errText } from '../../services.js';
-  import { fmt1 } from '../../fmt.js';
   import MetricTd from '../../components/MetricTd.svelte';
   import { dimsOf } from './shared.js';
-  import * as S from '../../strings/index.js';
 
   let { spectra, context } = $props();
   const steamId = $derived(context.steamId);
 
   const SEEDS = ['map_matches', 'map_wins', 'map_adr'];
 
-  const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS, errText }));
+  const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS }));
   const sweep = table.sweep;
   const defs = $derived(table.defs);
   const reads = $derived(table.reads);

@@ -1,24 +1,20 @@
 <script>
-  import { plural } from '../../fmt.js';
   import Popover from '../../components/Popover.svelte';
-  import { groupBy, openReplay, sideBySteam } from '../../builtinhelpers.js';
+  import ProfileLink from '../../components/ProfileLink.svelte';
+  import { groupBy, openReplay, sideBySteam, plural, S } from '../../builtinhelpers.js';
   import { matchTab } from '../../builtinhelpers.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
-  import * as S from '../../strings/index.js';
   import {
-    roundSideClassOf,
-    DASH,
-    fmtMs,
-    fmtZeroDash,
-    roundClock,
-    roundIndexLabel,
-    roundScoreLabel,
-    roundsByNumber,
-    hashOf,
-    entryLoopAround,
-    isSteam,
-    openPlayer,
-  } from '../../builtinhelpers.js';
+  roundSideClassOf,
+  DASH,
+  fmtMs,
+  fmtZeroDash,
+  roundClock,
+  roundIndexLabel,
+  roundScoreLabel,
+  roundsByNumber,
+  entryLoopAround,
+} from '../../builtinhelpers.js';
 
   // Utility throw log: the kind, thrower and round filters, the count, and one
   // row per throw. The filter state lives in the composer (filt / setFilt).
@@ -28,7 +24,6 @@
     rows = [],
     rounds = [],
     players = [],
-    names = { ct: S.match.sideCt, t: S.match.sideT },
     sideSwitches = 0,
     tickRate = 64,
     loopSecs = 5,
@@ -123,9 +118,6 @@
     });
   }
 
-  function openProfile(steam) {
-    if (isSteam(steam)) openPlayer(spectra, steam);
-  }
 </script>
 
 <div class="util-throwlog">
@@ -218,19 +210,14 @@
                   </button>
                 </span>
                 <span class="chip util-kind {r.kind}">{r.kind}</span>
-                {#if /^\d{17}$/.test(r.thrower)}
-                  <button
-                    class="comb-name-btn util-thrower {playerCls(r.round, r.thrower, r.throwerName)}"
-                    title={S.utility.openPrefix + name + S.utility.profileSuffix}
-                    onclick={() => openProfile(r.thrower)}
-                  >
-                    {name || DASH}
-                  </button>
-                {:else}
-                  <span class="util-thrower {playerCls(r.round, r.thrower, r.throwerName)}">
-                    {name || DASH}
-                  </span>
-                {/if}
+                <ProfileLink
+                  steam={r.thrower}
+                  name={name || DASH}
+                  nav={spectra.navigate}
+                  variant="name-link"
+                  cls="util-thrower {playerCls(r.round, r.thrower, r.throwerName)}"
+                  title={S.utility.openPrefix + name + S.utility.profileSuffix}
+                />
                 <span
                   class="mono muted util-tick"
                   title={S.utility.tickPrefix +

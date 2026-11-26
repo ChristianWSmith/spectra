@@ -1,5 +1,9 @@
 // Formatting helpers for the M1 views. Pure functions — no services.
 import { isCounted } from './rounds.js';
+import * as S from './strings/index.js';
+
+// THE missing-value dash: the one glyph a missing value shows.
+export const DASH = '\u2014';
 
 // intoRoundSeconds is THE round-relative time arithmetic: seconds from
 // the round's start tick to `tick` at the match rate — null when the
@@ -49,11 +53,11 @@ export function chatClock(c, roundByNumber, tickRate) {
 // that link the name compose <ProfileLink> + chatTag + ': ' + text, so
 // the link survives and the line reads identically).
 export function chatTag(channel, side) {
-  if (channel === 'all') return '[ALL]';
+  if (channel === 'all') return S.match.chatTagAll;
   if (channel === 'team') {
     const s = String(side || '').toLowerCase();
-    if (s === 'ct') return '[CT]';
-    if (s === 't') return '[T]';
+    if (s === 'ct') return S.match.chatTagCt;
+    if (s === 't') return S.match.chatTagT;
   }
   return '';
 }
@@ -82,7 +86,7 @@ export function roundClock(tick, round, tickRate) {
 
 // fmtDuration renders seconds as "35m39s" (or "42s" / "1h02m03s").
 export function fmtDuration(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 0) return '—';
+  if (!Number.isFinite(seconds) || seconds < 0) return DASH;
   const s = Math.round(seconds);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
@@ -97,7 +101,7 @@ export function fmtDuration(seconds) {
 // second; non-finite or negative input renders "—". Unlike fmtDuration
 // this is a *time of day* style readout, not a duration label.
 export function fmtClock(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 0) return '—';
+  if (!Number.isFinite(seconds) || seconds < 0) return DASH;
   const s = Math.round(seconds);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
@@ -185,9 +189,9 @@ export function fmtMoney(v) {
 export function fmtMetric(v, format, key, resolveName) {
   if (format === 'identity') {
     const name = key && typeof resolveName === 'function' ? resolveName(key) : '';
-    return name && name !== key ? name : '—';
+    return name && name !== key ? name : DASH;
   }
-  if (!Number.isFinite(v)) return '—';
+  if (!Number.isFinite(v)) return DASH;
   switch (format) {
     case 'int':
       return fmtInt(v);
@@ -225,19 +229,13 @@ export function fmtMs(ms) {
 // cell produces one today (counts are ≥ 0).
 export function fmtZeroDash(value, unit = '') {
   const n = Number(value);
-  if (!Number.isFinite(n) || n === 0) return '—';
+  if (!Number.isFinite(n) || n === 0) return DASH;
   return unit ? `${n} ${unit}` : String(n);
-}
-
-// fmtTickSeconds renders ticks as a seconds string ("12.3s").
-export function fmtTickSeconds(ticks, tickRate) {
-  if (!Number.isFinite(ticks)) return '—';
-  return `${tickSeconds(ticks, tickRate).toFixed(1)}s`;
 }
 
 // fmtBytes renders byte counts as MB (GB above 1024 MB).
 export function fmtBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes < 0) return '—';
+  if (!Number.isFinite(bytes) || bytes < 0) return DASH;
   const mb = bytes / (1024 * 1024);
   if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
   if (mb >= 1) return `${mb.toFixed(1)} MB`;
@@ -251,7 +249,7 @@ export function fmtBytes(bytes) {
 // the deliberate exception — those values ARE 0..1 and fmtMetric scales
 // them ×100 before calling this (never pass them raw).
 export function fmtPercent(x) {
-  if (!Number.isFinite(x)) return '—';
+  if (!Number.isFinite(x)) return DASH;
   return `${round1(x)}%`;
 }
 
@@ -275,7 +273,7 @@ export function neverExtracted(d) {
 // not a date: it takes the placeholder instead of rendering a year-0001
 // oddity on a still-parsing/queued/failed row.
 export function fmtDate(d) {
-  if (neverExtracted(d)) return '—';
+  if (neverExtracted(d)) return DASH;
   const date = d instanceof Date ? d : new Date(d);
   return date.toLocaleString(undefined, {
     year: 'numeric',
@@ -301,7 +299,7 @@ export function fmtDate(d) {
 // Non-integer / missing input (null, undefined, NaN, negatives) is not a
 // readable patch either → the placeholder.
 export function fmtPatch(n) {
-  if (!Number.isInteger(n) || n <= 0) return '—';
+  if (!Number.isInteger(n) || n <= 0) return DASH;
   const s = String(n);
   if (s.length !== 5) return s;
   return `${s[0]}.${s.slice(1, 3)}.${s[3]}.${s[4]}`;
@@ -315,18 +313,18 @@ export function round1(x) {
 
 // fmt1 / fmt2 render floats with a fixed 1- / 2-decimal tail.
 export function fmt1(x) {
-  if (!Number.isFinite(x)) return '—';
+  if (!Number.isFinite(x)) return DASH;
   return round1(x).toFixed(1);
 }
 
 export function fmt2(x) {
-  if (!Number.isFinite(x)) return '—';
+  if (!Number.isFinite(x)) return DASH;
   return (Math.round(x * 100) / 100).toFixed(2);
 }
 
 // fmtInt renders an integer with locale grouping.
 export function fmtInt(x) {
-  if (!Number.isFinite(x)) return '—';
+  if (!Number.isFinite(x)) return DASH;
   return Math.round(x).toLocaleString();
 }
 

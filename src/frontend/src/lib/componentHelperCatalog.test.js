@@ -62,6 +62,28 @@ test('the catalog names every piece under spectra.ui', () => {
   assert.deepEqual([...names].sort(), [...ui].sort());
 });
 
+// The props a piece takes: the names in its component's $props() destructure.
+function propsOf(src) {
+  const m = src.match(/let \{([\s\S]*?)\} = \$props\(\);/);
+  assert.ok(m, 'the component destructures $props()');
+  return m[1]
+    .split(',')
+    .map((part) => part.trim().match(/^([\w$]+)/))
+    .filter(Boolean)
+    .map((x) => x[1]);
+}
+
+test('each ui piece documents every prop its component takes', () => {
+  for (const piece of UI_PIECES) {
+    const src = readFileSync(join(here, 'components', piece.name + '.svelte'), 'utf8');
+    for (const prop of propsOf(src)) {
+      if (prop === 'children') continue; // the doc says "children" once, for every piece with content
+      const documented = new RegExp('\\b' + prop + '\\b').test(piece.doc);
+      assert.ok(documented, `spectra.ui.${piece.name} takes ${prop} but its catalog entry does not say so`);
+    }
+  }
+});
+
 test('the context fields are the frame’s context keys', () => {
   // The mounting context the frame passes (matchId, steamId, round) is what the catalog offers.
   assert.deepEqual(CONTEXT_FIELDS.map((f) => f.name), ['matchId', 'steamId', 'round']);

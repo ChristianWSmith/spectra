@@ -1,4 +1,5 @@
 <script>
+  import { DASH } from '../builtinhelpers.js';
   import { stepActive, onListKey, scrollActive } from '../listnav.js';
   // Player selector for the Reports target panel — the native <select>
   // ("rep-player") replacement, styled to MatchPicker: the trigger shows
@@ -31,7 +32,8 @@
   // states: metricId → {state, error} — the compute-state read Reports
   // already holds, so a half with no fresh row renders the state word
   // in its title instead of the raw column behind it.
-  let { players = [], stats = {}, seeds = new Map(), states = new Map(), value = '', onselect = () => {}, id = '' } = $props();
+  // onerror (optional) receives a failed career read; the picker keeps its empty stats.
+  let { players = [], stats = {}, seeds = new Map(), states = new Map(), value = '', onselect = () => {}, id = '', onerror = () => {} } = $props();
 
   // The list's height budget: below this much room under the trigger, it opens above.
   const POP_ROOM = 340;
@@ -70,8 +72,11 @@
       .then((m) => {
         if (live) career = m;
       })
-      .catch(() => {
-        if (live) career = new Map();
+      .catch((e) => {
+        if (live) {
+          career = new Map();
+          onerror(e);
+        }
       });
     return () => (live = false);
   });
@@ -106,7 +111,7 @@
   // profile field behind it, never a fabricated 0.
   function seedText(name, p) {
     const pres = seedPres(name, p);
-    if (pres.kind !== 'value') return '—';
+    if (pres.kind !== 'value') return DASH;
     const e = seedEntry(name);
     return fmtMetric(pres.value, e ? e.def.format : '');
   }
@@ -128,7 +133,7 @@
   // otherwise (an "—r" would read as a unit the number never had).
   function roundsText(p) {
     const pres = seedPres('rounds_played', p);
-    return pres.kind === 'value' ? `${seedText('rounds_played', p)}r` : '—';
+    return pres.kind === 'value' ? `${seedText('rounds_played', p)}r` : DASH;
   }
   // The K/D/A line is the compound form (design Q2): the fresh value
   // through each seed's format tag, the dash otherwise, and the state
@@ -318,7 +323,7 @@
                   <span class="muted num" title={seedTitle('career_matches', p)}
                     >{seedPres('career_matches', p).kind === 'value'
                       ? seedText('career_matches', p) + S.common.playerPickerMatchesSuffix
-                      : '—'}</span
+                      : DASH}</span
                   >
                   {#if careerMatchesPositive(p)}
                     <span class="muted num" title={seedTitle('career_adr', p)}>{seedText('career_adr', p)}{S.common.playerPickerAdrSuffix}</span>

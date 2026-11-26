@@ -21,10 +21,10 @@
 // every 3 OT rounds after that (27, 30, 33, …) — and only while another
 // counted round follows, so a match ending on a boundary cell gets no
 // dangling marker (the gating lives in ../rounds.js separatorFlags).
+  import { DASH, roundsTabHash } from '../builtinhelpers.js';
 import { sideAtRound } from '../sideparity.js';
 import { teamStartClass } from '../teams.js';
 import { roundIndexLabel, separatorFlags } from '../rounds.js';
-import { buildHash } from '../router.js';
 import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
 let {
@@ -34,7 +34,6 @@ let {
   teamAbove = '',
   teamBelow = '',
   sideSwitches = 0,
-  back = '',
   nav = () => {},
   // Optional IN-PLACE round picker (Replay's round ribbon): when set, a
   // cell click calls onselect(r.number) instead of navigating to the
@@ -102,13 +101,13 @@ const cells = $derived.by(() => {
         class:current={current === r.number}
         class:point-up={r.winner !== '' && r.winner === aboveSide}
         class:point-down={r.winner !== '' && r.winner !== aboveSide}
-        title={`${kind} — ${r.winner ? r.winner.toUpperCase() : '—'}${r.reason ? ' · ' + r.reason : ''}`}
+        title={`${kind} — ${r.winner ? r.winner.toUpperCase() : DASH}${r.reason ? ' · ' + r.reason : ''}`}
         aria-label={kind}
         aria-current={current === r.number ? 'true' : undefined}
         onclick={() =>
           onselect
             ? onselect(r.number)
-            : nav(buildHash(`/match/${matchId}/rounds`, { round: r.number }))}
+            : nav(roundsTabHash(matchId, r.number))}
       >
         {label}
       </button>

@@ -1,24 +1,19 @@
 <script>
-  import { bySide, roundsTabHash, openRoundsTab } from '../../builtinhelpers.js';
+  import { bySide, openRoundsTab, openRow, economySource, S } from '../../builtinhelpers.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
   import { DASH } from '../../builtinhelpers.js';
   import WinnerCell from '../../components/WinnerCell.svelte';
-  import { openRow } from '../../keys.js';
-  import { economySource } from '../../economysource.svelte.js';
-  import * as S from '../../strings/index.js';
   import {
-    fmtMoney,
-    moneyResetIndexes,
-    flipIndexes,
-    eraOf,
-    sideInEra,
-    teamKeyAt,
-    teamStartClass,
-    econColumns,
-    econValue,
-    hashOf,
-    loadEconomy,
-  } from '../../builtinhelpers.js';
+  fmtMoney,
+  moneyResetIndexes,
+  flipIndexes,
+  eraOf,
+  sideInEra,
+  teamKeyAt,
+  teamStartClass,
+  econColumns,
+  econValue,
+} from '../../builtinhelpers.js';
 
   // Economy curve: hand-drawn SVG, one line per team, the winner strip under it.
   // Mounted by a composer, the economy comes from it (the props below). Mounted alone (a component preview),

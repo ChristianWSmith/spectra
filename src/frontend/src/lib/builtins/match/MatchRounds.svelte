@@ -1,11 +1,8 @@
 <script>
-  import { openReplay, matchPath } from '../../builtinhelpers.js';
+  import { openReplay, matchPath, entryLoopSpan, openRow, CONTROL_SELECTOR, whileCurrent, S } from '../../builtinhelpers.js';
   import { sideSwitchesOf } from '../../builtinhelpers.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
   import { roundSideClassOf, namesOf, rosterOf } from '../../builtinhelpers.js';
-  import { openRow } from '../../keys.js';
-  import { whileCurrent } from '../../current.js';
-  import * as S from '../../strings/index.js';
   import {
     SQL_ROSTER,
     SQL_TEAMS,
@@ -24,22 +21,21 @@
     roundOf,
   } from './panelhelpers.js';
   import WinnerCell from '../../components/WinnerCell.svelte';
+  import ProfileLink from '../../components/ProfileLink.svelte';
+  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
   import {
-    DASH,
-    isSteam,
-    separatorFlags,
-    roundWinnerName,
-    openPlayer,
-    roundClock,
-    entryLoopAround,
-    hashOf,
-    roundsByNumber,
-    scoreThrough,
-    sideAtRound,
-    chatClock,
-    chatTag,
-    fmtInt,
-  } from '../../builtinhelpers.js';
+  DASH,
+  separatorFlags,
+  roundWinnerName,
+  roundClock,
+  entryLoopAround,
+  roundsByNumber,
+  scoreThrough,
+  sideAtRound,
+  chatClock,
+  chatTag,
+  fmtInt,
+} from '../../builtinhelpers.js';
 
   const COPY = Object.freeze({
     colWatch: S.match.colWatch,
@@ -52,12 +48,9 @@
     colKills: S.match.colKills,
     watchRoundTitle: S.match.watchRoundTitle,
     watchRoundAria: S.match.watchRoundAria,
-    openProfile: S.match.openProfile,
     killedVerb: S.match.killedVerb,
     roundDetailLoading: S.match.roundDetailLoading,
     roundDetailFailed: S.match.roundDetailFailed,
-    roundDetailShow: S.match.roundDetailShow,
-    roundDetailHide: S.match.roundDetailHide,
   });
 
   // Match rounds: one row per round, in round order. The ▶ watches the round in the replay
@@ -124,10 +117,7 @@
           prewarm(d);
         },
         // A failed read is reported into this frame (guard routes the error to it).
-        (e) =>
-          spectra.guard(() => {
-            throw e;
-          })(),
+        (e) => spectra.report(e),
       );
     }),
   );
@@ -215,9 +205,7 @@
       },
       (e) => {
         if (data && data.id === matchId) details = { ...details, [n]: { failed: true } };
-        spectra.guard(() => {
-          throw e;
-        })();
+        spectra.report(e);
       },
     );
   }
@@ -247,8 +235,7 @@
     const r = data.rounds.find((x) => x.number === n);
     const start = r && Number.isFinite(r.startTick) ? r.startTick : null;
     const end = r && Number.isFinite(r.endTick) ? r.endTick : null;
-    const loop = start != null && end != null && start >= 0 && start <= end ? start + ',' + end : undefined;
-    spectra.navigate({ path: '/replay/' + data.id, query: { tick: start, loop, back: backTo() } });
+    openReplay(spectra, data.id, { tick: start, loop: entryLoopSpan(start, end), back: backTo() });
   }
 
   // Round-detail helpers: a name's side colour in this round, the team behind a side of this
@@ -278,17 +265,7 @@
 </script>
 
 {#snippet playerLink(steam, name, cls)}
-  {#if isSteam(steam)}
-    <button
-      class="comb-name-btn {cls}"
-      title={fill(COPY.openProfile, { name })}
-      onclick={() => openPlayer(spectra, steam)}
-    >
-      {name || DASH}
-    </button>
-  {:else}
-    <span class={cls}>{name || DASH}</span>
-  {/if}
+  <ProfileLink {steam} {name} nav={spectra.navigate} variant="name-link" {cls} />
 {/snippet}
 
 {#snippet roundDetail(n)}
@@ -467,7 +444,7 @@
                     <td class="num">{fmtInt(e.moneyAvg)}</td>
                   </tr>
                 {:else}
-                  <tr><td colspan="4" class="muted">{S.match.noEconomySamples}</td></tr>
+                  <EmptyTableRow colspan={4} text={S.match.noEconomySamples} />
                 {/each}
               </tbody>
             </table>
@@ -527,7 +504,7 @@
             class:split-before={ri > 0 && data.seps[ri - 1]}
             tabindex="0"
             aria-expanded={open.includes(r.number)}
-            {...openRow(() => toggleRound(r.number), { ignore: 'input, button, a' })}
+            {...openRow(() => toggleRound(r.number), { ignore: CONTROL_SELECTOR, enterOnly: true })}
           >
             <td>
               <button

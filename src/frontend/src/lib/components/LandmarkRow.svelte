@@ -43,6 +43,7 @@
   import { playerSideAt } from '../teams.js';
   import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
   import ProfileLink from './ProfileLink.svelte';
+  import { openRow, CONTROL_SELECTOR } from '../keys.js';
 
   let {
     row,
@@ -100,17 +101,8 @@
   // elements may not nest inside a button. Clicks that land on one of
   // those links select the LINK, never the row (target guard, the same
   // pattern Match's scoreboard rows use).
-  function onMainClick(e) {
-    if (e.target instanceof Element && e.target.closest('button, a, input')) return;
-    onselect(row);
-  }
-
-  function onMainKey(e) {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    if (e.target instanceof Element && e.target.closest('button, a, input')) return;
-    e.preventDefault();
-    onselect(row);
-  }
+  // The row's click and Enter/Space (openRow); a control inside the row keeps its own.
+  const mainRow = openRow(() => onselect(row), { ignore: CONTROL_SELECTOR, enterOnly: true });
 
   function seek(e) {
     e.stopPropagation();
@@ -179,8 +171,7 @@
     role="button"
     tabindex="0"
     title="{cat?.label || row.category}{S.common.landmarkRowTitleInfix}{row.tick}"
-    onclick={onMainClick}
-    onkeydown={onMainKey}
+    {...mainRow}
   >
     {#if roundByNumber}
       <!-- Round + match clock (the feed's canonical readout): the round

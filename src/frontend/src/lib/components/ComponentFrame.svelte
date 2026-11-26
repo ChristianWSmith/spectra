@@ -1,22 +1,25 @@
 <script>
   import { createLoadState } from '../loadstate.svelte.js';
-import { liveMetrics } from '../metricslive.svelte.js';
-import { readMetrics } from '../metricreads.js';
-import { metricPresentation } from '../metricstate.js';
-import { fmtMetric } from '../fmt.js';
-import { activateOnKey } from '../keys.js';
-import { whileCurrent } from '../current.js';
-import ErrorBanner from './ErrorBanner.svelte';
-import EmptyNote from './EmptyNote.svelte';
-import MetricCell from './MetricCell.svelte';
-import WinnerCell from './WinnerCell.svelte';
-import StatCard from './StatCard.svelte';
-import StatusChip from './StatusChip.svelte';
-import { DASH } from '../builtinhelpers.js';
+  import { liveMetrics } from '../metricslive.svelte.js';
+  import { readMetrics } from '../metricreads.js';
+  import { metricPresentation } from '../metricstate.js';
+  import { fmtMetric, fmtDate, fmtDuration } from '../fmt.js';
+  import { activateOnKey, openRow } from '../keys.js';
+  import { whileCurrent, loadForMatch, loadThen, latestOnly } from '../current.js';
+  import { DASH, openMatch, openPlayer, followPlayer } from '../builtinhelpers.js';
+  import ErrorBanner from './ErrorBanner.svelte';
+  import EmptyNote from './EmptyNote.svelte';
+  import EmptyTableRow from './EmptyTableRow.svelte';
+  import MetricCell from './MetricCell.svelte';
+  import RetryButton from './RetryButton.svelte';
+  import WinnerCell from './WinnerCell.svelte';
+  import StatCard from './StatCard.svelte';
+  import StatusChip from './StatusChip.svelte';
+  import MetricTd from './MetricTd.svelte';
+  import SortTh from './SortTh.svelte';
   // ComponentFrame — the frame every mounted component sits in
-  // one failing component shows a
-  // dismissible error inside its own frame and the rest of the surface
-  // keeps rendering.
+  // A failing component shows a dismissible error inside its own frame, and the
+  // rest of the surface keeps rendering.
   //
   // What reaches the frame:
   //   render / $effect errors   <svelte:boundary> → the failed snippet
@@ -100,7 +103,6 @@ import { DASH } from '../builtinhelpers.js';
   // (spectra.busy), and the old values stay hidden until the new ones arrive.
   const load = createLoadState();
   // Reads this frame has started, and nested frames mounted in it (the layout class reads childCount).
-  let readCount = $state(0);
   let childCount = $state(0);
   // The frame is busy while its own reads run, or its parent's do. Only a box that holds no boxes
   // shows it (LoadBox): a container of panels leaves the hider and spinner to the panels inside.
@@ -115,18 +117,12 @@ import { DASH } from '../builtinhelpers.js';
     parent.adopt(1);
     return () => parent.adopt(-1);
   });
-  // untrack: a read started inside an effect must not make that effect depend on
-  // the counter it moves.
   // A read belongs to the content it asks for (this frame’s context): a refresh of that content is
   // not busy, a new context is.
-  const tracked = (read) => (...args) => {
-    untrack(() => readCount++);
-    return load.track(read(...args), contentKey);
-  };
-  const trackedLoad = (promise) => {
-    untrack(() => readCount++);
-    return load.track(promise, contentKey);
-  };
+  const trackedLoad = (promise) => load.track(promise, contentKey);
+  const tracked = (read) => (...args) => trackedLoad(read(...args));
+  // The failure sink a load falls back to: the frame's own banner.
+  const frameFailure = (e) => report(e);
   // The `spectra` value a component receives: the read API plus the
   // nested mount component, and whether a read is in flight.
   // liveMetrics: the progress and reload wiring a panel mounts (metricslive.svelte.js).
@@ -144,11 +140,32 @@ import { DASH } from '../builtinhelpers.js';
     metricPresentation,
     fmtMetric,
     activateOnKey,
+    openRow,
+    // latestOnly(): a runner for one kind of load; a failure goes to the frame banner unless fail takes it.
+    latestOnly: () => {
+      const run = latestOnly();
+      return (promise, apply, fail = frameFailure) => run(promise, apply, fail);
+    },
+    loadThen: (isCurrent, promise, apply, failed = frameFailure) => loadThen(isCurrent, promise, apply, failed),
     whileCurrent,
     // The one dash a missing cell shows, and the shared display pieces (the same
     // components the builtins use): <spectra.ui.ErrorBanner>…</spectra.ui.ErrorBanner>.
     dash: DASH,
-    ui: { ErrorBanner, EmptyNote, MetricCell, WinnerCell, StatCard, StatusChip },
+    ui: { ErrorBanner, EmptyNote, EmptyTableRow, LoadBox, MetricCell, MetricTd, RetryButton, SortTh, WinnerCell, StatCard, StatusChip },
+    // Navigation and formatting the built-ins share: openMatch(id) and openPlayer(steamId) open a view
+    // (through this frame's navigate); the formatters are the ones the built-ins use.
+    openMatch: (matchId) => openMatch(spectra, matchId),
+    openPlayer: (steamId) => openPlayer(spectra, steamId),
+    // followPlayer(steamId, back?): the replay of the context's match, following this player. `back`
+    // is the route the replay returns to; without it the replay returns to the match.
+    followPlayer: (steamId, back = '') => followPlayer(spectra, ctx.matchId, back, steamId),
+    // report(error): shows a failure in this frame's banner (a failed load a panel has no banner for).
+    report: (e) => report(e),
+    // loadForMatch(getMatchId, load, apply, failed?): the effect body of a load for the match, applied
+    // only while current. A failure goes to the frame banner unless `failed` takes it.
+    loadForMatch: (getMatchId, load, apply, failed = frameFailure) => loadForMatch(getMatchId, load, apply, failed),
+    fmtDate,
+    fmtDuration,
     metric: tracked(api.metric),
     query: tracked(api.query),
     metricsByMatch: tracked(api.metricsByMatch),
@@ -163,12 +180,16 @@ import { DASH } from '../builtinhelpers.js';
 
   $effect(() => (el ? attachFrame(el, report) : undefined));
 
-  // A new source (or component) is a new mount: earlier failures go.
+  // A new source (or component) is a new mount: earlier failures go. The first run is the
+  // mount itself, which a child may already have reported into (spectra.report in its own
+  // mount effect runs first), so the first run keeps the banner.
+  let sourceArmed = false;
   $effect(() => {
     const src = source;
     void component;
     dismissed = false;
-    routed = '';
+    if (sourceArmed) routed = '';
+    sourceArmed = true;
     loaded = null;
     loadError = '';
     if (src == null) return;

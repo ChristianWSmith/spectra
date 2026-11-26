@@ -1,6 +1,6 @@
 <script>
-  import { DASH } from '../../builtinhelpers.js';
-  import ErrorBanner from '../../components/ErrorBanner.svelte';
+  import { DASH, S, getKillTags, roundClock, entryLoopAround, roundScoreLabel, roundsByNumber, matchRecord, KILL_TAG_DIST_DEF, KILL_TAG_KIND_TITLES } from '../../builtinhelpers.js';
+  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
   // Combat · Kill tags. The duels of
   // the match: round → time into round → killer vs victim → distance in
   // metres, ONE row per KILL (the kill's kind facts share the row, both chips
@@ -9,14 +9,6 @@
   // round <select> narrows the same list (round 1 by default, "All rounds"
   // on offer). It reads the match from `context` and nothing else but the
   // loop-length pref, which stays a plain pref (ruling 33).
-  import * as S from '../../strings/index.js';
-  import { getKillTags } from '../../services.js';
-  import { roundClock } from '../../fmt.js';
-  import { entryLoopAround } from '../../nav.js';
-  import { roundScoreLabel } from '../../rounds.js';
-  import { roundsByNumber } from '../../replay/landmarks.js';
-  import { matchRecord } from '../../viewstate.svelte.js';
-  import { KILL_TAG_DIST_DEF, KILL_TAG_KIND_TITLES } from '../../definitions.js';
   import EventPlay from '../../components/EventPlay.svelte';
   import ProfileLink from '../../components/ProfileLink.svelte';
   import Popover from '../../components/Popover.svelte';
@@ -126,9 +118,6 @@
   const replay = combat.replay;
 </script>
 
-{#if error}
-  <ErrorBanner ondismiss={combat.dismiss} dismissLabel={S.combat.dismissError}>{error}</ErrorBanner>
-{/if}
 
 <div class="comb-sec">
   <h2>{S.combat.killTagsHeading}</h2>
@@ -230,6 +219,7 @@
                 steam={g.aSteam}
                 name={g.aName || DASH}
                 nav={spectra.navigate}
+                variant="name-link"
                 cls={playerRoundCls(g.round, g.aSteam, g.aName)}
                 title={S.fill(S.combat.openProfileName, { name: g.aName })}
               />
@@ -240,6 +230,7 @@
                 steam={g.bSteam}
                 name={g.bName || DASH}
                 nav={spectra.navigate}
+                variant="name-link"
                 cls={playerRoundCls(g.round, g.bSteam, g.bName)}
                 title={S.fill(S.combat.openProfileName, { name: g.bName })}
               />
@@ -247,11 +238,7 @@
             <td class="num" title={KILL_TAG_DIST_DEF}>{g.distance ? Math.round(g.distance) : DASH}</td>
           </tr>
         {:else}
-          <tr>
-            <td colspan="8" class="muted">
-              {error ? S.combat.killTagsUnavailable : S.combat.noKillTags}
-            </td>
-          </tr>
+          <EmptyTableRow colspan={8} text={error ? S.combat.killTagsUnavailable : S.combat.noKillTags} />
         {/each}
       </tbody>
     </table>

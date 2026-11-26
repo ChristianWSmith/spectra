@@ -40,30 +40,30 @@ import MatchRounds from './match/MatchRounds.svelte';
 import MatchDetails from './match/MatchDetails.svelte';
 
 export const PROFILE_VIEW_ID = 'profile';
-export const REPORTS_VIEW_ID = 'match-reports';
+const REPORTS_VIEW_ID = 'match-reports';
 
 // The Match tabs' component ids (the Match view mounts the tab components
 // directly, with its context).
 export const MATCH_TABS_ID = 'match';
-export const MATCH_HEATMAPS_ID = 'match-heatmaps';
-export const MATCH_COMBAT_ID = 'match-combat';
+const MATCH_HEATMAPS_ID = 'match-heatmaps';
+const MATCH_COMBAT_ID = 'match-combat';
 
 // The Economy and Utility tabs' ids (the Match view mounts the composers).
-export const ECONOMY_ID = 'match-economy';
-export const ECON_CURVE_ID = 'match-economy-curve';
-export const ECON_CARDS_ID = 'match-economy-cards';
-export const ECON_ROUNDS_ID = 'match-economy-rounds';
-export const UTILITY_ID = 'match-utility';
-export const UTIL_LOG_ID = 'match-utility-log';
-export const UTIL_DAMAGE_ID = 'match-utility-damage';
-export const UTIL_BLIND_ID = 'match-utility-blind';
+const ECONOMY_ID = 'match-economy';
+const ECON_CURVE_ID = 'match-economy-curve';
+const ECON_CARDS_ID = 'match-economy-cards';
+const ECON_ROUNDS_ID = 'match-economy-rounds';
+const UTILITY_ID = 'match-utility';
+const UTIL_LOG_ID = 'match-utility-log';
+const UTIL_DAMAGE_ID = 'match-utility-damage';
+const UTIL_BLIND_ID = 'match-utility-blind';
 
 // The Match view's six panels.
-export const MATCH_OVERVIEW_ID = 'match-overview';
-export const MATCH_ROSTERS_ID = 'match-rosters';
-export const MATCH_SCOREBOARD_ID = 'match-scoreboard';
-export const MATCH_ROUNDS_ID = 'match-rounds';
-export const MATCH_DETAILS_ID = 'match-details';
+const MATCH_OVERVIEW_ID = 'match-overview';
+const MATCH_ROSTERS_ID = 'match-rosters';
+const MATCH_SCOREBOARD_ID = 'match-scoreboard';
+const MATCH_ROUNDS_ID = 'match-rounds';
+const MATCH_DETAILS_ID = 'match-details';
 
 export const BUILTIN_PANELS = Object.freeze({
   [PROFILE_VIEW_ID]: ProfileView,

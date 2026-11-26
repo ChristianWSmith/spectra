@@ -1,21 +1,13 @@
 <script>
-  import { whenCurrent } from '../../current.js';
-  import { whileCurrent } from '../../current.js';
-  import ErrorBanner from '../../components/ErrorBanner.svelte';
+  import { loadThen, whileCurrent, liveMetrics, fmtMetric } from '../../builtinhelpers.js';
   // Career headline cards (builtin profile panel). The profile-scope metrics
   // of the default selection (DEFAULT_CARDS.profile, in the default sequence),
   // one card each. Every value is one metric() read for the context's player.
   // Pinning is retired (owner ruling 33): this panel shows the default set and
   // reads no preference.
-  import { errText } from '../../services.js';
-  import { DEFAULT_CARDS, composedSequence } from '../../metricorder.js';
-  import { liveMetrics } from '../../metricslive.svelte.js';
-  import { fmtMetric } from '../../fmt.js';
   import StatCard from '../../components/StatCard.svelte';
   import MetricCell from '../../components/MetricCell.svelte';
-  import { loadProfile, readCell } from './shared.js';
-  import { readMetrics } from '../../metricreads.js';
-  import * as S from '../../strings/index.js';
+  import { loadProfile, readCell, defaultCardDefs } from './shared.js';
 
   let { spectra, context } = $props();
   const steamId = $derived(context.steamId);
@@ -23,15 +15,10 @@
   let defs = $state([]);
   let wins = $state(null);
   let reads = $state(new Map());
-  let loadError = $state('');
   const sweep = liveMetrics();
 
   // The cards: the default profile selection, in the default sequence.
-  const cardDefs = $derived(
-    composedSequence('profile', defs)
-      .filter((e) => e.kind === 'metric' && DEFAULT_CARDS.profile.includes(e.name))
-      .map((e) => e.def),
-  );
+  const cardDefs = $derived(defaultCardDefs(defs));
 
   // The player the shown values belong to (plain: it only gates the reset).
   let loadedFor = null;
@@ -43,30 +30,23 @@
       loadedFor = sid;
       if (newPlayer) reads = new Map();
       if (!sid) return;
-      loadProfile(spectra, sid)
-        .then(async ([rows, profile]) => {
+      loadThen(
+        isCurrent,
+        loadProfile(spectra, sid),
+        async ([rows, profile]) => {
           if (!isCurrent()) return;
-          loadError = '';
           defs = rows || [];
           wins = profile ? profile.wins : null;
-          const names = composedSequence('profile', defs)
-            .filter((e) => e.kind === 'metric' && DEFAULT_CARDS.profile.includes(e.name))
-            .map((e) => e.name);
-          const next = await readMetrics(spectra, names, errText);
+          const names = defaultCardDefs(defs).map((d) => d.name);
+          const next = await spectra.readMetrics(names);
           if (isCurrent()) reads = next;
-        })
-        .catch(
-          whenCurrent(isCurrent, (e) => {
-            loadError = errText(e);
-          }),
-        );
+        },
+        (e) => spectra.report(e),
+      );
     }),
   );
 </script>
 
-{#if loadError}
-  <ErrorBanner>{S.profiles.careerErrorLead}{loadError}</ErrorBanner>
-{/if}
 <div class="prof-career">
   <div class="stat-grid prof-stats">
     {#each cardDefs as def (def.id)}

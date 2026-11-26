@@ -1,4 +1,5 @@
 <script>
+  import { DASH } from '../fmt.js';
 // Status chip for match/job lifecycle states. progress (0..1) renders a
 // mini bar inside the chip — used for "parsing" match rows. progress is
 // the JOB-WIDE point (models.Job / JobProgressEvent), not a per-stage
@@ -166,7 +167,7 @@ let tip = $derived.by(() => {
   </span>
 {:else}
   <span class="chip status {palette}" title={tip}>
-    {LABELS[status] || status || '—'}
+    {LABELS[status] || status || DASH}
     {#if pct != null && status !== 'ready' && status !== 'failed'}
       <span class="chip-bar" aria-hidden="true">
         <span class="chip-bar-fill" class:indeterminate={pct === 0} style="width:{pct || 100}%"></span>

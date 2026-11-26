@@ -150,10 +150,6 @@ export function getVersion() {
   return AppService.GetVersion();
 }
 
-export function saveWindowSize(w, h) {
-  return AppService.SaveWindowSize(w, h);
-}
-
 // Immediate update check (Settings → About → Check for Updates). Unlike the
 // silent startup check this always reports an outcome — the framework's
 // update window opens even when already up to date.
@@ -427,10 +423,6 @@ export function getTeamNames(id) {
   return cachedRead('GetTeamNames', [id], () => MatchService.GetTeamNames(id));
 }
 
-export function getRoundDetail(id, round) {
-  return MatchService.GetRoundDetail(id, round);
-}
-
 // The round bounds (roundFrom/roundTo) are an inclusive, PARTIAL range
 // over the round number: 0/absent = open on that side (both unset = all
 // rounds; round 0 never exists, so 0 can only mean "unset"); kind/
@@ -685,6 +677,7 @@ export function getUtility(matchId) {
   return cachedRead('GetUtility', [matchId], () => AnalyticsService.GetUtility(matchId));
 }
 export function getHeatmap(matchId, kind, filter) { return AnalyticsService.GetHeatmap(matchId, kind, filter || {}); }
+export function getHeatmapKD(matchId, filter) { return AnalyticsService.GetHeatmapKD(matchId, filter); }
 export function listSavedFilters() { return AnalyticsService.ListSavedFilters(); }
 export function saveFilter(name, scope, filterJson) { return AnalyticsService.SaveFilter(name, scope, filterJson); }
 export function deleteSavedFilter(id) { return AnalyticsService.DeleteSavedFilter(id); }
@@ -1328,4 +1321,3 @@ export function saveExport(urlPath, defaultName, extensions) {
 
 export function getPref(key) { return KVStoreService.Get(key); }
 export function setPref(key, value) { return KVStoreService.Set(key, value); }
-export function deletePref(key) { return KVStoreService.Delete(key); }

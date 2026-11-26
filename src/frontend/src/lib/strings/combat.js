@@ -5,7 +5,6 @@
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
 
 export const combat = {
-  dismissError: 'Dismiss error',
   loadingDetail: 'Loading combat data…',
   metricErrorLead: 'Metric-backed stats unavailable: ',
   dismissMetricError: 'Dismiss metric stats error',
@@ -35,6 +34,7 @@ export const combat = {
   oneKillPrefix: 'One kill — ',
   openProfileName: 'Open profile — {name}',
   killTagsUnavailable: 'Kill tags unavailable.',
+  clutchesUnavailable: 'Clutches unavailable.',
   noKillTags: 'No kill tags match this filter.',
   clutchesHeading: 'Clutches',
   filterClutchesLabel: 'Filter clutches by outcome',

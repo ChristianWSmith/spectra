@@ -1,6 +1,4 @@
 <script>
-  import RetryButton from '../../components/RetryButton.svelte';
-  import { whileCurrent, latestOnly } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   import LoadBox from '../../components/LoadBox.svelte';
   // Match details: one panel with the match's facts. The key facts (server, tickrate,
@@ -8,17 +6,8 @@
   // copy state come first; then the import details (the reproducibility facts and the
   // encrypted-message note) and the advanced diagnostics (the entity summary). A NULL or
   // missing stored value shows a dash. Every read is through this frame's context.
-  import * as S from '../../strings/index.js';
   import { SQL_FACTS, numOf, fmtBytes, parseStamp, fmtDate, fill } from './panelhelpers.js';
-  import { DASH, fmtInt, fmt1 } from '../../builtinhelpers.js';
-  import {
-    getMatch,
-    getVoicePresence,
-    evictDemoCopy,
-    getProvenance,
-    getEntitySummary,
-    errText,
-  } from '../../services.js';
+  import { DASH, fmtInt, fmt1, loadThen, whileCurrent, latestOnly, S, getMatch, getVoicePresence, evictDemoCopy, getProvenance, getEntitySummary, errText } from '../../builtinhelpers.js';
   import StatusChip from '../../components/StatusChip.svelte';
 
   const COPY = Object.freeze({
@@ -53,6 +42,7 @@
   let copyBusy = $state(false);
   let prov = $state(null);
   let provError = $state('');
+  let copyError = $state('');
   let ent = $state(null);
   let entError = $state('');
   // One generation per read: a stale reply (a match switch, a Retry) is dropped.
@@ -97,26 +87,28 @@
     whileCurrent((isCurrent) => {
       const matchId = context.matchId;
       // Each read lands on its own: the stored facts never wait on the match row or the voice read.
-      spectra.query(SQL_FACTS).then(
+      loadThen(
+        isCurrent,
+        spectra.query(SQL_FACTS),
         (res) => {
-          if (isCurrent()) facts = parseFacts(res.rows[0]);
+          facts = parseFacts(res.rows[0]);
         },
-        (e) =>
-          spectra.guard(() => {
-            throw e;
-          })(),
+        (e) => spectra.report(e),
       );
-      Promise.all([getMatch(matchId), getVoicePresence(matchId).catch(() => null)]).then(
+      loadThen(
+        isCurrent,
+        Promise.all([
+          getMatch(matchId),
+          getVoicePresence(matchId).catch((e) => {
+            spectra.report(e);
+            return null;
+          }),
+        ]),
         ([m, v]) => {
-          if (isCurrent()) {
-            match = m;
-            voice = v;
-          }
+          match = m;
+          voice = v;
         },
-        (e) =>
-          spectra.guard(() => {
-            throw e;
-          })(),
+        (e) => spectra.report(e),
       );
       if (matchId) {
         loadProv(matchId);
@@ -128,13 +120,12 @@
   async function freeCopy() {
     if (copyBusy || !match) return;
     copyBusy = true;
+    copyError = '';
     try {
       await evictDemoCopy(context.matchId);
       match = await getMatch(context.matchId);
     } catch (e) {
-      spectra.guard(() => {
-        throw e;
-      })();
+      copyError = errText(e);
     } finally {
       copyBusy = false;
     }
@@ -236,11 +227,11 @@
 
   <section class="md-sec">
     <h2 class="md-head">{S.library.importDetails}</h2>
+    {#if copyError}
+      <ErrorBanner ondismiss={() => (copyError = '')} dismissLabel={S.match.dismissError}>{copyError}</ErrorBanner>
+    {/if}
     {#if provError}
-      <ErrorBanner>
-        {provError}
-        <RetryButton onretry={() => loadProv(context.matchId)} label={S.library.retry} />
-      </ErrorBanner>
+      <ErrorBanner onretry={() => loadProv(context.matchId)} retryLabel={S.library.retry}>{provError}</ErrorBanner>
     {:else if !prov}
       <LoadBox tag="div" class="md-hold" busy name="match-details-import" key=""></LoadBox>
     {:else}
@@ -290,10 +281,7 @@
   <section class="md-sec">
     <h2 class="md-head">{S.library.advancedDiagnostics}</h2>
     {#if entError}
-      <ErrorBanner>
-        {entError}
-        <RetryButton onretry={() => loadEnt(context.matchId)} label={S.library.retry} />
-      </ErrorBanner>
+      <ErrorBanner onretry={() => loadEnt(context.matchId)} retryLabel={S.library.retry}>{entError}</ErrorBanner>
     {:else if !ent}
       <LoadBox tag="div" class="md-hold" busy name="match-details-diagnostics" key=""></LoadBox>
     {:else}

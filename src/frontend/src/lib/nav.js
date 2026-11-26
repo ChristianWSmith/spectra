@@ -546,8 +546,3 @@ export const NAV_ACTIONS = [
   },
 ];
 
-// replayAt opens a match's replay at a tick, looped when asked, and returns to the
-// back route. The combat panels open their events through it.
-export function replayAt(spectra, matchId, { tick, loop, follow, back }) {
-  spectra.navigate(replayHash(matchId, {}, { tick, loop, follow: follow || undefined, back }));
-}

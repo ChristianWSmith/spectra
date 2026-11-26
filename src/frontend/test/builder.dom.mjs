@@ -344,6 +344,8 @@ const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'builder');
 copyClosure({
   dir,
   entries: [
+  'strings/index.js',
+  'builtinhelpers.js',
   'views/Builder.svelte',
   'components/Dialog.svelte',
   'components/SourceEditor.svelte',
@@ -371,13 +373,15 @@ const fileURL = (p) => pathToFileURL(p).href;
 // nav.js + services.js → local bundle with both pinned to the SAME
 // absolute URLs the view links (one module instance each).
 svelteCompile(
-  readFileSync('src/lib/components/StatusChip.svelte', 'utf8'),
+  readFileSync('src/lib/components/StatusChip.svelte', 'utf8').replace("from '../fmt.js'", "from './fmt.js'"),
   'StatusChip.svelte',
   join(dir, 'statuschip.js'),
 );
 const plSrc = readFileSync('src/lib/components/ProfileLink.svelte', 'utf8')
   .replace("from '../nav.js'", `from '${fileURL('src/lib/nav.js')}'`)
-  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`);
+  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
+  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`)
+  .replace("from '../builtinhelpers.js'", `from '${fileURL('src/lib/builtinhelpers.js')}'`);
 svelteCompile(plSrc, 'ProfileLink.svelte', join(dir, 'profilelink.js'));
 
 // SortTh (the preview table's sortable headers) — a leaf apart from

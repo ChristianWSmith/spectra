@@ -601,30 +601,44 @@ What a component can use, its \`spectra\` helpers and display pieces, is listed 
 - **\`spectra.whileCurrent(run)\`**: for a load started in an effect. \`run\` receives \`isCurrent()\`, and a late result is dropped once the inputs change or the component unmounts.
 - **\`spectra.liveMetrics({ onDone })\`**: a panel's metric progress and reload wiring. \`progress\`, \`frac(id)\`, \`stage(id)\` and \`chip(def)\` show the sweep. \`reload\` goes up each time a metric finishes, so an effect or a derived value that reads it fetches again. \`onDone\` runs on each finish.
 
+- **\`spectra.loadThen(isCurrent, promise, apply, failed?)\`**: a panel load. \`apply\` takes the result while \`isCurrent()\` still holds, and a failure goes to \`failed\` (the frame banner when it is left out).
+- **\`spectra.latestOnly()\`**: a runner for one kind of load. Create it once, then call \`run(promise, apply, fail?)\` for each load: only the newest result applies, so a slow earlier load cannot overwrite a later one.
+
 **Interaction**
 
+- **\`spectra.openRow(open, { ignore, enterOnly })\`**: spread onto a clickable row (\`<tr {...spectra.openRow(open)}>\`). A click, or Enter (and Space unless \`enterOnly\`), runs \`open\`. \`ignore\` is a selector for controls inside the row that must keep their own clicks and keys.
+- **\`spectra.followPlayer(steamId, back?)\`**: opens the replay of the component's match, following this player. \`back\` is the route the replay returns to; the match when it is left out.
 - **\`spectra.navigate(route)\`**: opens a view. The route is a hash such as \`#/match/…\`, or \`{ path, query }\`.
 - **\`spectra.guard(fn)\`**: wraps an event or async handler, so its error goes to the component's box instead of being lost.
+- **\`spectra.report(error)\`**: shows a failed load in the component's box, which the reader can dismiss. Use it for a failed read the component has no retry for.
+- **\`spectra.loadForMatch(getMatchId, load, apply, failed?)\`**: the effect body of a load for the component's match: \`$effect(spectra.loadForMatch(() => context.matchId, load, apply))\`. \`apply\` takes the value while the load is still current, and a failure goes to the frame banner, unless \`failed\` takes it.
 - **\`spectra.activateOnKey(fn, { enterOnly })\`**: makes a clickable row work from the keyboard. \`onkeydown={spectra.activateOnKey(open)}\` runs \`open\` on Enter, and on Space unless \`enterOnly\` is set.
 - **\`spectra.Child\`**: mounts another named component inside this one: \`<spectra.Child name="…" props={…} />\`. The child receives this component's context and has its own error box. Nesting has a fixed depth limit.
 
 **Display**
 
-- **\`spectra.fmtMetric(value, format)\`**: the text of a stored value, in the metric's format.
+- **\`spectra.fmtMetric(value, format)\`**: the text of a stored value, in the metric's format (\`int\`, \`float1\`, \`float2\`, \`percent\`, \`currency\`). A \`percent\` is a 0 to 1 fraction. The \`identity\` format names a player: \`fmtMetric(value, \'identity\', steamId, resolveName)\`.
 - **\`spectra.metricPresentation(state, row, unitHasRows)\`**: maps a read onto what a cell shows, as a value, a no-data dash or a status chip. \`ui.MetricCell\` takes its result.
 - **\`spectra.dash\`**: the one dash a missing value shows.
 - **\`spectra.ui\`**: the shared display pieces, used as \`<spectra.ui.StatCard …>\`.
 
 | Piece | What it shows | Props |
 |---|---|---|
-| \`ui.ErrorBanner\` | An error line, with an optional dismiss | \`ondismiss\`, \`dismissLabel\`, children |
+| \`ui.ErrorBanner\` | An error line, with an optional Retry and an optional dismiss | \`onretry\`, \`retryLabel\`, \`ondismiss\`, \`dismissLabel\`, children |
 | \`ui.EmptyNote\` | A muted note for an empty state | children |
+| \`ui.EmptyTableRow\` | The one row a table shows when it has nothing to list | \`colspan\`, \`empty\`, \`text\`, \`chip\` |
+| \`ui.LoadBox\` | The loading shell: holds its height while a load runs, and shows a spinner over the content | \`busy\`, \`name\`, \`key\`, \`tag\`, \`class\`, children |
 | \`ui.MetricCell\` | A metric's cell | \`pres\`, \`format\`, \`chip\`, \`words\` |
+| \`ui.MetricTd\` | A numeric table cell for one stored value | \`pres\`, \`format\`, \`chip\`, \`words\`, \`title\` |
+| \`ui.RetryButton\` | The button beside a failed read, to load it again | \`onretry\`, \`label\` |
+| \`ui.SortTh\` | A sortable table header cell (the view keeps its sort state) | \`label\`, \`cls\`, \`title\`, \`active\`, \`desc\`, \`ariaSort\`, \`onclick\` |
 | \`ui.WinnerCell\` | A side's name, as a chip | \`name\`, \`winner\`, \`title\` |
-| \`ui.StatCard\` | A labelled figure, with an optional sub-line | \`label\`, \`value\`, \`sub\`, \`title\`, and the \`subSlot\` and \`valueSlot\` slots |
+| \`ui.StatCard\` | A labelled figure, with an optional sub-line | \`label\`, \`labelTitle\`, \`value\`, \`sub\`, \`title\`, \`cls\`, \`subCls\`, \`badge\`, \`onclick\`, and the \`subSlot\` and \`valueSlot\` slots |
 | \`ui.StatusChip\` | A status chip, with optional progress | \`status\`, \`progress\`, \`stage\`, \`block\`, \`detail\`, \`title\` |
 
-A component cannot import another module, and the save gate refuses one that tries. Everything in this list is the whole surface. The source editor completes these names as you type: type \`spectra.\` for the helpers, \`spectra.ui.\` for the pieces, and \`context.\` for its fields.`,
+Other helpers: \`spectra.openMatch(matchId)\` and \`spectra.openPlayer(steamId)\` open a match or a player's profile; \`spectra.fmtDate(d)\` and \`spectra.fmtDuration(seconds)\` format a timestamp and a span.
+
+A component can import the public Svelte runtime modules (\`svelte\`, \`svelte/store\`, \`svelte/motion\`, and the rest of the public list), and nothing else: the save gate refuses any other import. Everything in this list is the whole surface. The source editor completes these names as you type: type \`spectra.\` for the helpers, \`spectra.ui.\` for the pieces, and \`context.\` for its fields.`,
   },
   {
     id: 'sql-console',

@@ -6,7 +6,21 @@
 // Run: node --test src/lib/builtinhelpers.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as copies from './builtinhelpers.js';
+import { registerHooks } from 'node:module';
+import { installEsmDirHook } from '../../test/esm-dir-hook.mjs';
+
+// builtinhelpers re-exports services.js, which loads the generated bindings directory: the stub
+// stands in for it (as services-cache.test.js does), and the directory resolves through the hook.
+installEsmDirHook();
+const stub = (name) => new URL(`../../test/stubs/${name}`, import.meta.url).href;
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === '@wailsio/runtime') return { url: stub('wails-runtime.mjs'), shortCircuit: true };
+    if (specifier.includes('bindings/github.com')) return { url: stub('bindings.mjs'), shortCircuit: true };
+    return nextResolve(specifier, context);
+  },
+});
+const copies = await import('./builtinhelpers.js');
 import { fmtMs, fmtClock, fmtMoney, fmtInt, fmtMetric, roundClock, fmtZeroDash, chatClock, chatTag } from './fmt.js';
 import { roundIndexLabel, roundScoreLabel, separatorFlags, moneyResetIndexes, roundStartTick, roundEndTick, isCounted } from './rounds.js';
 import { teamNames, playerSideClassAt, teamStartClass } from './teams.js';
@@ -197,4 +211,30 @@ test('chatTag and chatClock match lib/fmt.js', () => {
   for (const c of [{ tick: 1500, round: 3 }, { tick: 50, round: -2 }, { tick: 99, round: 7 }]) {
     assert.equal(copies.chatClock(c, rounds, 64), chatClock(c, rounds, 64));
   }
+});
+
+test('followPlayer opens the replay of the match following the player, back to its tab', () => {
+  const nav = [];
+  const spectra = { navigate: (h) => nav.push(h) };
+  copies.followPlayer(spectra, 7, 'match/7/combat', '76561190000000001');
+  copies.followPlayer(spectra, 7, '', '76561190000000001');
+  assert.deepEqual(nav, [
+    '/replay/7?back=match/7/combat&follow=76561190000000001',
+    '/replay/7?back=match/7&follow=76561190000000001',
+  ]);
+});
+
+// Navigation targets are routes the router reads: a slashless hash lands on the Library.
+test('openMatch and openRoundsTab navigate to routes the router reads', async () => {
+  const { parseHash } = await import('./router.js');
+  const nav = [];
+  const spectra = { navigate: (h) => nav.push(h) };
+  copies.openMatch(spectra, 7);
+  copies.openRoundsTab(spectra, 7, 3);
+  const [matchRoute, roundsRoute] = nav.map((h) => parseHash('#' + h));
+  assert.equal(matchRoute.name, 'match');
+  assert.equal(matchRoute.id, 7);
+  assert.equal(roundsRoute.name, 'match');
+  assert.equal(roundsRoute.tab, 'Rounds');
+  assert.equal(roundsRoute.query.round, '3');
 });

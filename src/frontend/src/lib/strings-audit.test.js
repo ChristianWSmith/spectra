@@ -104,52 +104,10 @@ const DENYLIST_EXEMPT = {
       why: 'the Rounds tab’s round side-class component query (read-only SQL, scoped to the round) — not user copy',
     },
   ],
-  'frontend/src/lib/builtinhelpers.js': [
-    {
-      text: "LEFT JOIN round_economy ct ON ct.match_id = r.match_id AND ct.round = r.number AND ct.side = 'ct' ",
-      why: 'the economy loader’s read-only SQL (builtinhelpers.js, bound from the match id) — not user copy',
-    },
-    {
-      text: "LEFT JOIN round_economy t ON t.match_id = r.match_id AND t.round = r.number AND t.side = 't' ",
-      why: 'the economy loader’s read-only SQL (builtinhelpers.js, bound from the match id) — not user copy',
-    },
-    {
-      text: "LEFT JOIN round_classifications rc ON rc.match_id = r.match_id AND rc.round = r.number ",
-      why: 'the economy loader’s read-only SQL (builtinhelpers.js, bound from the match id) — not user copy',
-    },
-    {
-      text: "LEFT JOIN round_side_classes rsct ON rsct.match_id = r.match_id AND rsct.round = r.number AND rsct.side = 'ct' ",
-      why: 'the economy loader’s read-only SQL (builtinhelpers.js, bound from the match id) — not user copy',
-    },
-    {
-      text: "LEFT JOIN round_side_classes rst ON rst.match_id = r.match_id AND rst.round = r.number AND rst.side = 't' ",
-      why: 'the economy loader’s read-only SQL (builtinhelpers.js, bound from the match id) — not user copy',
-    },
-    {
-      text: "SELECT round, steam_id, side FROM round_player_sides WHERE match_id = :match_id ORDER BY round ASC, steam_id ASC",
-      why: 'the economy loader’s read-only SQL (builtinhelpers.js, bound from the match id) — not user copy',
-    },
-    {
-      text: "SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ",
-      why: 'the economy loader’s read-only SQL (builtinhelpers.js, bound from the match id) — not user copy',
-    },
-    {
-      text: "AND e.attacker = ps.steam_id AND e.attacker <> e.victim AND NOT EXISTS (SELECT 1 FROM round_player_sides a ",
-      why: 'the economy loader’s read-only SQL (builtinhelpers.js, bound from the match id) — not user copy',
-    },
-    {
-      text: "JOIN round_player_sides v ON v.match_id = a.match_id AND v.round = a.round AND v.steam_id = e.victim ",
-      why: 'the economy loader’s read-only SQL (builtinhelpers.js, bound from the match id) — not user copy',
-    },
-  ],
   'frontend/src/lib/componentruntime/compile.js': [
     {
       text: 'load the profile’s seed values (read)',
       why: 'a developer description of a curated helper name in the built-in registry (BUILTIN_HELPERS, ruling 45) — never rendered',
-    },
-    {
-      text: 'bindings/github.com/ChristianWSmith/spectra',
-      why: 'the registry key of the analytics binding (a module path, not copy)',
     },
   ],
   'internal/store/query_store.go': [
@@ -868,7 +826,11 @@ const staleExempt = [...exemptKeys].filter((k) => !candidates.has(k)).map((k) =>
 
 // Check B inputs: which svelte files still carry class-1 literals
 const inlineFiles = [...svelteLits].filter(([, lits]) => lits.length > 0).map(([file]) => file);
-const importsCatalog = (file) => /strings\/index\.js/.test(readFileSync(path.join(SRC, file), 'utf8'));
+// A built-in takes the catalog as S from builtinhelpers.js (which re-exports it), or imports it directly.
+const importsCatalog = (file) => {
+  const text = readFileSync(path.join(SRC, file), 'utf8');
+  return /strings\/index\.js/.test(text) || /import\s*\{[^}]*\bS\b[^}]*\}\s*from\s*'[^']*builtinhelpers\.js'/.test(text);
+};
 
 // content inputs (class 3 — swept, reported, never failing)
 const seed = seedDocs();
@@ -1100,7 +1062,8 @@ test('Check D — length tiers: common copy ≤70, hints ≤200 (owner, 2026-11-
   assert.ok(titleHintKeys.size > 100, `title derivation found only ${titleHintKeys.size} keys — the scan is broken`);
   assert.ok(inline.length > 100, `extracted only ${inline.length} inline literals — the scan is broken`);
   assert.ok(seed.docs.length >= 50, `extracted only ${seed.docs.length} seed docs — the schema.sql extractor is broken`);
-  assert.ok(defs.length >= 20, `extracted only ${defs.length} definitions.js strings — the scan is broken`);
+  // 15, not 20: six unread definitions were removed from definitions.js; 17 remain.
+  assert.ok(defs.length >= 15, `extracted only ${defs.length} definitions.js strings — the scan is broken`);
   assert.ok(goErrs.length > 400, `extracted only ${goErrs.length} Go error literals — the scan is broken`);
 
   // Declaration liveness — `why` mandatory, nothing stale (the ledger

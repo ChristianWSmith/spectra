@@ -1,4 +1,5 @@
 <script>
+  import { DASH } from '../builtinhelpers.js';
   import { stepActive } from '../listnav.js';
   // M5 command palette: Ctrl/Cmd-K overlay with fuzzy search
   // across nav actions, matches, players, saved filters, metrics and saved
@@ -11,6 +12,7 @@
     listSavedQueries,
   } from '../services.js';
   import { toggleTheme } from '../theme.js';
+  import { openProfile } from '../nav.js';
   import { fmtDate } from '../fmt.js';
   import { NAV_ACTIONS, replayHash, isNavEnabled, resolveNavTarget } from '../nav.js';
   import { listedPlayers } from '../players.js';
@@ -271,8 +273,8 @@
       q,
       rows.map((p) => ({
         label: p.name || p.steamId,
-        sub: `${p.matches} matches · last seen ${p.lastSeen || '—'}`,
-        run: () => nav(`/player/${p.steamId}`),
+        sub: `${p.matches} matches · last seen ${p.lastSeen || DASH}`,
+        run: () => openProfile(nav, p.steamId),
       })),
     );
   }

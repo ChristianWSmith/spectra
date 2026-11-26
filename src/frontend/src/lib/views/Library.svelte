@@ -344,12 +344,16 @@
       .then((names) => {
         if (live) mapNames = names || [];
       })
-      .catch(() => {});
+      .catch((e) => {
+        if (live) error = errText(e);
+      });
     listPlayers('')
       .then((rows) => {
         if (live) libPlayers = listedPlayers(rows) || [];
       })
-      .catch(() => {});
+      .catch((e) => {
+        if (live) error = errText(e);
+      });
     const offs = [
       subscribeJobProgress((snap) => (jobProgress = snap)),
       // Scan progress (spectra:scan-progress): the import-dir panel's ONE
@@ -994,6 +998,7 @@
       <span class="lib-filter-field">
         <label class="field-label" for="lib-filter-map">{S.library.mapLabel}</label>
         <SuggestInput
+            onerror={(e) => (error = errText(e))}
           id="lib-filter-map"
           inputClass="lib-filter"
           placeholder={S.library.mapPlaceholder}
@@ -1006,6 +1011,7 @@
       <span class="lib-filter-field">
         <label class="field-label" for="lib-filter-player">{S.library.playerLabel}</label>
         <SuggestInput
+            onerror={(e) => (error = errText(e))}
           id="lib-filter-player"
           inputClass="lib-filter"
           kind="player"

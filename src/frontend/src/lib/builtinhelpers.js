@@ -4,8 +4,8 @@
 // builtin may take (a user component takes none). Each name is the canonical
 // function of its module (lib/fmt.js, rounds.js, sideparity.js, teams.js,
 // econ.js, nav.js), imported and re-exported here; this module holds no second
-// implementation. The only own function is chatTag, which draws its tags from
-// the strings catalog. builtinhelpers.test.js pins the re-exports.
+// implementation. chatTag comes from fmt.js and is re-exported above. builtinhelpers.test.js pins
+// the re-exports.
 //
 // Rules the builtins keep (AGENTS.md "Builtin conventions"): a missing value is
 // a dash, never a zero (ruling 23); a stored value is never recomputed here
@@ -19,23 +19,26 @@
 // the names below are imported from it (the locals the module uses) and
 // re-exported (the names a builtin imports from here). DASH is the one dash a
 // missing cell shows; fmt.js writes the same character.
-import { round1, fmtInt, fmt1, fmt2, fmtMoney, fmtMs, fmtClock, fmtZeroDash, tickSeconds, normTickRate, roundClock, chatClock } from './fmt.js';
+import { chatTag, round1, fmtInt, fmt1, fmt2, fmtMoney, fmtMs, fmtClock, fmtZeroDash, tickSeconds, normTickRate, roundClock, chatClock } from './fmt.js';
 import { isCounted } from './rounds.js';
 import { roundsByNumber } from './replay/landmarks.js';
 import { buildHash } from './router.js';
 import { playerSideClassAt, sideClassOf, pickPlayer, resolveSide } from './teams.js';
 import * as S from './strings/index.js';
 import { bySide, econColumns, econValue, lossPips } from './econ.js';
-import { asTick, entryLoopAround, entryLoopSpan, isSteam } from './nav.js';
+import { asTick, entryLoopAround, entryLoopSpan, isSteam, openProfile, replayHash } from './nav.js';
 import { moneyResetIndexes, roundEndTick, roundIndexLabel, roundScoreLabel, roundStartTick, scoreThrough, separatorAfter, separatorFlags } from './rounds.js';
 import { eraOf, flipIndexes, sideAtRound, sideInEra, startSideFor, teamKeyAt, winnerTeamKey } from './sideparity.js';
 import { synthTeamName, teamNames, teamStartClass } from './teams.js';
 export { econColumns, econValue, entryLoopAround, entryLoopSpan, eraOf, flipIndexes, isSteam, lossPips, moneyResetIndexes, roundEndTick, roundIndexLabel, roundScoreLabel, roundStartTick, scoreThrough, separatorAfter, separatorFlags, sideAtRound, sideInEra, startSideFor, synthTeamName, teamKeyAt, teamNames, teamStartClass, winnerTeamKey };
 export { bySide, pickPlayer, resolveSide, roundsByNumber, asTick, sideClassOf, round1, fmtInt, fmt1, fmt2, fmtMoney, fmtMs, fmtClock, fmtZeroDash, tickSeconds, normTickRate, roundClock, chatClock, isCounted };
-export const DASH = '\u2014';
+export { DASH, chatTag } from './fmt.js';
 // playerSideClassAt is teams.js's (the one implementation); a builtin imports it from here.
 export { playerSideClassAt };
 // Match routes: the match's route, its tab, and the rounds tab opened at a round.
+// matchPath and matchTab are the BACK form: a route without its leading slash, as a
+// back= query value carries it (the router reads a slashed hash). A navigation target
+// adds the slash itself: spectra.navigate('/' + matchPath(id)).
 export function matchPath(matchId) {
   return 'match/' + matchId;
 }
@@ -43,12 +46,13 @@ export function matchTab(matchId, tab) {
   return matchPath(matchId) + '/' + tab;
 }
 export function roundsTabHash(matchId, round) {
-  return hashOf('/match/' + matchId + '/rounds', { round });
+  return hashOf('/' + matchTab(matchId, 'rounds'), { round });
 }
 // openReplay navigates to a match's replay with the given route extras (tick, loop,
 // follow, back); a missing or empty extra is left out of the route.
-export function openReplay(spectra, matchId, extras) {
-  spectra.navigate(hashOf('/replay/' + matchId, extras));
+export function openReplay(spectra, matchId, { filter, ...extras } = {}) {
+  const kept = Object.fromEntries(Object.entries(extras).filter(([, v]) => v != null && v !== ''));
+  spectra.navigate(filter ? replayHash(matchId, filter, kept) : hashOf('/replay/' + matchId, kept));
 }
 // openRoundsTab navigates to a match's rounds tab at a round.
 export function openRoundsTab(spectra, matchId, round) {
@@ -198,50 +202,31 @@ export function hashOf(path, query) {
 }
 
 
-// The route to a player's profile.
-export function playerRoute(steam) {
-  return '/player/' + steam;
-}
-
 // Open a match's view.
 export function openMatch(spectra, matchId) {
-  spectra.navigate(matchPath(matchId));
+  spectra.navigate('/' + matchPath(matchId));
 }
 
 // Open a player's profile (the name link on every builtin that lists players).
 export function openPlayer(spectra, steam) {
-  spectra.navigate(playerRoute(steam));
+  openProfile((route) => spectra.navigate(route), steam);
 }
 
-// The replay route a row opens, following that player. `back` is the tab the
-// panel sits on; the replay returns there.
-export function followRoute(matchId, back, steam) {
-  const to = back || 'match/' + matchId;
-  return '/replay/' + matchId + '?back=' + encodeURIComponent(to).replace(/%2F/g, '/') + '&follow=' + steam;
-}
-
-// Open the replay following a player.
+// Open the replay following a player. `back` is the tab the panel sits on; the replay
+// returns there (the match when it is empty).
 export function followPlayer(spectra, matchId, back, steam) {
-  spectra.navigate(followRoute(matchId, back, steam));
+  openReplay(spectra, matchId, { back: back || matchPath(matchId), follow: steam });
 }
 
 // CHAT: a chat line's clock and speaker tag (lib/fmt.js chatClock / chatTag).
 // The round prefix is RD (RD12 0:47), and team chat tags the speaker's side.
-export function chatTag(channel, side) {
-  if (channel === 'all') return S.match.chatTagAll;
-  if (channel === 'team') {
-    const s = String(side || '').toLowerCase();
-    if (s === 'ct') return S.match.chatTagCt;
-    if (s === 't') return S.match.chatTagT;
-  }
-  return '';
-}
+
 
 // The economy of one match, read the way the Economy view reads it: the rounds, the economy rows, the team names,
 // the side switches and the winner. The Economy composer loads it for its panels; a panel mounted alone (a
 // component preview) loads it itself. Null when there is no match to read.
 const SQL_MATCH = 'SELECT score_ct, score_t, side_switches FROM matches WHERE id = :match_id';
-export const SQL_ROUNDS = 'SELECT number, winner, start_tick, end_tick FROM rounds WHERE match_id = :match_id ORDER BY number';
+export const SQL_ROUND_SPANS = 'SELECT number, winner, start_tick, end_tick FROM rounds WHERE match_id = :match_id ORDER BY number';
 const SQL_ECON =
   'SELECT r.number, r.winner, r.equip_ct, r.equip_t, ' +
   'COALESCE(ct.money_sampled_sum, 0), COALESCE(t.money_sampled_sum, 0), ' +
@@ -289,7 +274,7 @@ export async function loadEconomy(spectra, matchId) {
   if (matchId == null) return null;
   const [m, roundRows, ecoRows, sideRows, teamRows, roster] = await Promise.all([
     spectra.query(SQL_MATCH),
-    spectra.query(SQL_ROUNDS),
+    spectra.query(SQL_ROUND_SPANS),
     spectra.query(SQL_ECON),
     spectra.query(SQL_SIDES),
     spectra.query(SQL_TEAMS),
@@ -305,3 +290,26 @@ export async function loadEconomy(spectra, matchId) {
   const matchWinner = scoreCT === scoreT ? '' : scoreCT > scoreT ? 'ct' : 't';
   return { rows, rounds, names, sideSwitches, matchWinner };
 }
+
+// Re-exports for the built-ins: a built-in takes every app helper it uses from this module.
+export { compareAsc } from './sortstate.js';
+export { latestOnly, loadForMatch, loadThen, whileCurrent } from './current.js';
+export { errText, evictDemoCopy, getHeatmapKD, getCareerTrend, getClutches, getEntitySummary, getHeatmap, getKillTags, getMatch, getMetricComputeState, getMetricValuesForMatch, getPlayerRefs, getProfile, getProvenance, getRounds, getScoreboard, getVoicePresence, listMetrics, listPlayers, listReportTemplates, renderReport } from './services.js';
+export { listedPlayers } from './players.js';
+export { matchKey, matchRecord, remember, seed } from './viewstate.svelte.js';
+export { DEFAULT_CARDS, composedSequence, inSequence, isRawId, rawItems } from './metricorder.js';
+export { liveMetricState, metricPresentation, metricStateTitle } from './metricstate.js';
+export { liveMetrics } from './metricslive.svelte.js';
+export { downloadCanvasPNG, downloadText } from './download.js';
+export { economySource } from './economysource.svelte.js';
+export { fmtBytes, fmtDate, fmtDuration, fmtMetric, fmtPatch, fmtPercent, plural } from './fmt.js';
+export { CONTROL_SELECTOR, openRow } from './keys.js';
+export { HEAT_CORE_KINDS, HEAT_GRENADE_DET_KINDS, HEAT_GRENADE_THROW_KINDS, heatKindLabel, heatRegionFilter, heatRegionTakesBBox } from './heatkinds.js';
+export { DEATH_STOPS, HEAT_STOPS, rampCss, signedRampCss } from './heatramp.js';
+export { loadMapPack } from './components/mapxform.js';
+export { runWork } from './workstate.svelte.js';
+export { loadLoopSecs } from './loopsecs.js';
+export { LOOP_SECS_DEFAULT, entryLoopSpanAround } from './nav.js';
+export { KILL_TAG_DIST_DEF, KILL_TAG_KIND_TITLES } from './definitions.js';
+export { MATCH_TABS, matchTabSlug } from './router.js';
+export { S };

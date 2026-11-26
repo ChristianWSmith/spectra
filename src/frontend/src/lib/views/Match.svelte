@@ -72,6 +72,7 @@
   let error = $state('');
   // M4 header badges: voice presence + chat-decrypt key state.
   let voice = $state(null);
+  let voiceError = $state('');
 
   // Analytics (M3): the Rounds tab's Class column left THIS view (W3a —
   // the table opens with its far-left watch column instead), so the
@@ -95,7 +96,10 @@
           getMatch(id),
           getRounds(id),
           getMatchSummary(id),
-          getVoicePresence(id).catch(() => null),
+          getVoicePresence(id).catch((e) => {
+            voiceError = errText(e);
+            return null;
+          }),
         ]),
         String(id),
         ([m, r, s, v]) => {
@@ -104,6 +108,7 @@
           rounds = r || [];
           summary = s || null;
           voice = v;
+          if (v) voiceError = '';
           error = m ? '' : 'Match not found.';
         },
       )
@@ -294,6 +299,12 @@
 </script>
 
 <LoadBox tag="div" class="view" busy={loadState.busy} key={loadState.key} name="view:match">
+  {#if voiceError}
+    <p class="error" role="alert">
+      {voiceError}
+      <button class="btn small ghost" aria-label={S.common.dismissErrorLine} title={S.common.dismissErrorLine} onclick={() => (voiceError = '')}><span class="codicon codicon-close" aria-hidden="true"></span></button>
+    </p>
+  {/if}
   {#if error}
     <!-- In-place dismissal: the ✕ clears the state variable itself (the
          id-keyed effect below re-arms it on the next match load). -->
@@ -387,7 +398,6 @@
       teamAbove={teams.ct}
       teamBelow={teams.t}
       sideSwitches={match.sideSwitches || 0}
-      back={backPath()}
       {nav}
     />
 

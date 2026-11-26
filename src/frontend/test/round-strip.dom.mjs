@@ -1,4 +1,5 @@
 import './compile-worker-node.mjs';
+import { copyClosure } from './copy-closure.mjs';
 // jsdom driver for RoundStrip — the POST-PREF reality (knife/warmup
 // discard, Phase 3): the show_knife_warmup_rounds setting is retired,
 // RoundStrip reads no kvstore key, and EVERY stored row renders — this
@@ -94,6 +95,8 @@ const svelteCompile = (src, filename, out) => {
 for (const f of ['rounds.js', 'sideparity.js', 'teams.js', 'router.js']) {
   writeFileSync(join(dir, f), readFileSync(join('src/lib', f), 'utf8'));
 }
+// RoundStrip reaches builtinhelpers.js (DASH) and its closure; services.js is the scripted stub.
+copyClosure({ dir, entries: ['builtinhelpers.js'] });
 
 // RoundStrip → rewrite its ../ imports to the local copies; the strings
 // catalog resolves from the real tree (Strings Stage 3 plumbing).
@@ -107,7 +110,8 @@ if (rsSrc.includes('kvstore')) {
   console.log('  FAIL RoundStrip imports the kvstore — the visibility pref is retired');
   process.exit(1);
 }
-svelteCompile(rsSrc, 'RoundStrip.svelte', join(dir, 'roundstrip-bundle.js'));
+// The bundle sits at the cache root, so its builtinhelpers import is the root copy.
+svelteCompile(rsSrc.replace("from '../builtinhelpers.js'", "from './builtinhelpers.js'"), 'RoundStrip.svelte', join(dir, 'roundstrip-bundle.js'));
 
 const harnessSrc = readFileSync('test/round-strip.harness.svelte', 'utf8');
 svelteCompile(harnessSrc, 'harness.svelte', join(dir, 'harness.js'));

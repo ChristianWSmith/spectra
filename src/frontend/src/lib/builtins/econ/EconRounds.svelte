@@ -1,23 +1,18 @@
 <script>
-  import { bySide, openReplay, matchTab, roundsTabHash, openRoundsTab } from '../../builtinhelpers.js';
+  import { bySide, openReplay, matchTab, openRoundsTab, economySource, whileCurrent, S } from '../../builtinhelpers.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
-  import { economySource } from '../../economysource.svelte.js';
-  import { whileCurrent } from '../../current.js';
-  import * as S from '../../strings/index.js';
   import WinnerCell from '../../components/WinnerCell.svelte';
   import {
-    DASH,
-    fmtInt,
-    fmtMoney,
-    separatorFlags,
-    roundStartTick,
-    roundEndTick,
-    roundWinnerName,
-    lossPips,
-    hashOf,
-    entryLoopSpan,
-    loadEconomy,
-  } from '../../builtinhelpers.js';
+  DASH,
+  fmtInt,
+  fmtMoney,
+  separatorFlags,
+  roundStartTick,
+  roundEndTick,
+  roundWinnerName,
+  lossPips,
+  entryLoopSpan,
+} from '../../builtinhelpers.js';
 
   // Economy rounds: one row per counted round. Deaths are the stored round-grain
   // metric raw_player_round_deaths, read per round and summed per side; a round
@@ -47,7 +42,10 @@
         list.map((round) =>
           spectra.metric('raw_player_round_deaths', { match_id: matchId, round }).then(
             (m) => [round, m],
-            () => [round, null],
+            (e) => {
+              spectra.report(e);
+              return [round, null];
+            },
           ),
         ),
       ).then((pairs) => {

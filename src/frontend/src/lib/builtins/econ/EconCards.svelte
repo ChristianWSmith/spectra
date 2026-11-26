@@ -1,17 +1,12 @@
 <script>
-  import { openReplay, matchTab } from '../../builtinhelpers.js';
-  import { economySource } from '../../economysource.svelte.js';
-  import { whileCurrent } from '../../current.js';
-  import * as S from '../../strings/index.js';
-  import { fmtMetric } from '../../fmt.js';
+  import { openReplay, matchTab, economySource, whileCurrent, S, fmtMetric } from '../../builtinhelpers.js';
+  import StatCard from '../../components/StatCard.svelte';
   import {
-    DASH,
-    roundStartTick,
-    roundEndTick,
-    hashOf,
-    entryLoopSpan,
-    loadEconomy,
-  } from '../../builtinhelpers.js';
+  DASH,
+  roundStartTick,
+  roundEndTick,
+  entryLoopSpan,
+} from '../../builtinhelpers.js';
   const ECON_CARDS = [
     {
       metric: 'pistol_hold',
@@ -95,13 +90,9 @@
     whileCurrent((isCurrent) => {
       const matchId = context.matchId;
       if (matchId == null) return;
-      Promise.all(CARDS.map((c) => spectra.metric(c.metric).catch(() => null))).then((res) => {
+      spectra.readMetrics(CARDS.map((c) => c.metric)).then((res) => {
         if (!isCurrent()) return;
-        const out = {};
-        CARDS.forEach((c, i) => {
-          out[c.metric] = res[i];
-        });
-        reads = out;
+        reads = Object.fromEntries(res);
       });
     }),
   );
@@ -204,18 +195,15 @@
     </span>
   {/snippet}
   {#each cards as c (c.key)}
-    {#if c.drill}
-      <button class="stat-cell" title={c.title} onclick={() => drill(c.drill)}>
-        <span class="field-label">{c.label}{@render badge(c)}</span>
-        <span class="stat-value">{c.value}</span>
-        <span class="stat-sub">{c.sub}</span>
-      </button>
-    {:else}
-      <div class="stat-cell no-drill" title={c.title}>
-        <span class="field-label">{c.label}{@render badge(c)}</span>
-        <span class="stat-value">{c.value}</span>
-        <span class="stat-sub">{c.sub}</span>
-      </div>
-    {/if}
+    {#snippet cardBadge()}{@render badge(c)}{/snippet}
+    <StatCard
+      label={c.label}
+      value={c.value}
+      sub={c.sub}
+      title={c.title}
+      cls={c.drill ? '' : 'no-drill'}
+      badge={cardBadge}
+      onclick={c.drill ? () => drill(c.drill) : null}
+    />
   {/each}
 </div>

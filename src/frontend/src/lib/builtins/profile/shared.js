@@ -1,18 +1,25 @@
+  import { metricStateTitle, metricPresentation, listMetrics, getProfile, DEFAULT_CARDS, composedSequence } from '../../builtinhelpers.js';
 // shared.js — the presentation rules the Profile panels share. A panel reads
 // its values through `spectra.metric()` (a MetricRead: state, value, rows),
 // and this module maps one read onto what a cell shows: a value, the honest
 // dash, or a state chip. NULL is a dash, never a zero (owner ruling 23); a
 // live sweep on a metric shows as processing (lib/metricstate.js precedence).
-import { metricStateTitle, metricPresentation } from '../../metricstate.js';
-import { readMetrics } from '../../metricreads.js';
-import { listMetrics, getProfile } from '../../services.js';
 
-export const NO_DATA_TITLE = 'no data for this player';
+// defaultCardDefs: the profile-scope metric definitions of the default selection
+// (DEFAULT_CARDS.profile), in the default sequence. The Career cards and their
+// read both take their names from it, so they cannot disagree.
+export function defaultCardDefs(defs) {
+  return composedSequence('profile', defs)
+    .filter((e) => e.kind === 'metric' && DEFAULT_CARDS.profile.includes(e.name))
+    .map((e) => e.def);
+}
+
+const NO_DATA_TITLE = 'no data for this player';
 
 // liveState: the word a cell shows for its metric. A sweep running on the
 // metric right now (the live progress feed, keyed by metric id) wins over
 // the read's own state.
-export function liveState(def, read, progress) {
+function liveState(def, read, progress) {
   if (def && progress && progress.has(def.id)) return 'processing';
   return read ? read.state : '';
 }
@@ -47,10 +54,6 @@ export function emptyChip(defs, reads, progress, names) {
   return null;
 }
 
-// loadSeeds reads the named metrics of a split table (sides, maps, weapons)
-// for the context's player. A name the catalog does not carry is never read:
-// its cells show the honest dash, not an error. Each read is one metric()
-// call, so its dims come back in `rows`.
 // loadProfile reads the metric catalog and one player's profile together: the catalog
 // names the cards, the profile carries the headline numbers.
 export function loadProfile(spectra, sid) {
@@ -60,14 +63,18 @@ export function loadProfile(spectra, sid) {
 // loadSplit reads a split table's catalog and its seed metrics for the
 // context's player: the catalog read, then loadSeeds over it. The three split
 // panels (sides, maps, weapons) load through this one chain.
-export function loadSplit(spectra, names, errText) {
-  return spectra.track(listMetrics()).then((rows) => loadSeeds(spectra, names, rows || [], errText));
+export function loadSplit(spectra, names) {
+  return spectra.track(listMetrics()).then((rows) => loadSeeds(spectra, names, rows || []));
 }
 
-export async function loadSeeds(spectra, names, catalog, errText) {
+// loadSeeds reads the named metrics of a split table (sides, maps, weapons)
+// for the context's player. A name the catalog does not carry is never read:
+// its cells show the honest dash, not an error. Each read is one metric()
+// call, so its dims come back in `rows`.
+export async function loadSeeds(spectra, names, catalog) {
   const defs = new Map(catalog.filter((d) => d && names.includes(d.name)).map((d) => [d.name, d]));
   const found = [...defs.keys()];
-  return { defs, reads: await readMetrics(spectra, found, errText) };
+  return { defs, reads: await spectra.readMetrics(found) };
 }
 
 // dimValue is one split cell's fresh number: the read's row for the dim,

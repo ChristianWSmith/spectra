@@ -1,19 +1,16 @@
 <script>
-  import { namesOf, rosterOf } from '../../builtinhelpers.js';
+  import ProfileLink from '../../components/ProfileLink.svelte';
+  import { namesOf, rosterOf, openRow, CONTROL_SELECTOR, loadForMatch, S, fmtMetric } from '../../builtinhelpers.js';
   import { sideSwitchesOf } from '../../builtinhelpers.js';
-  import { loadForMatch } from '../../current.js';
-  import * as S from '../../strings/index.js';
   import {
-    readFrameBase,
-    SQL_ROSTER,
-    SQL_TEAMS,
-    SQL_SWITCHES,
-    startClass,
-    readUnit,
-    cellText,
-    kdaText,
-  } from './panelhelpers.js';
-  import { isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
+  readFrameBase,
+  startClass,
+  readUnit,
+  kdaText,
+  matchPres,
+  STATE_WORD,
+} from './panelhelpers.js';
+  import MetricTd from '../../components/MetricTd.svelte';
 
   // Match rosters: each side's players with K/D/A and ADR. Players sit in the
   // default order (kills, then name). The "Other" table appears only when a
@@ -36,7 +33,7 @@
     const other = rows.filter((r) => r[2] !== 'ct' && r[2] !== 't');
     const cell = (steam) => ({
       kda: kdaText(kills, deaths, assists, steam),
-      adr: cellText(adr, steam, 'float1'),
+      adr: matchPres(adr, steam),
     });
     const mapRow = (r) => ({ steam: r[0], name: r[1], side: r[2], ...cell(r[0]) });
     return {
@@ -52,10 +49,11 @@
       () => context.matchId,
       load,
       (d) => (data = d),
+      (e) => spectra.report(e),
     ),
   );
 
-  const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
+  const follow = (steam) => spectra.followPlayer(steam, back);
 </script>
 
 <div class="roster-grid">
@@ -73,30 +71,12 @@
           </thead>
           <tbody>
             {#each team.players as p (p.steam)}
-              <tr
-                class="clickable"
-                onclick={(e) => {
-                  if (e.target instanceof Element && e.target.closest('button')) return;
-                  follow(p.steam);
-                }}
-              >
+              <tr class="clickable" tabindex="0" {...openRow(() => follow(p.steam), { ignore: CONTROL_SELECTOR, enterOnly: true })}>
                 <td class={startClass(p.side, data.switches)}>
-                  {#if isSteam(p.steam)}
-                    <button
-                      class="btn ghost small name-link {startClass(p.side, data.switches)}"
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        openPlayer(spectra, p.steam);
-                      }}
-                    >
-                      {p.name}
-                    </button>
-                  {:else}
-                    {p.name}
-                  {/if}
+                  <ProfileLink steam={p.steam} name={p.name} nav={spectra.navigate} variant="name-link" stopRow cls={startClass(p.side, data.switches)} />
                 </td>
                 <td class="num">{p.kda}</td>
-                <td class="num">{p.adr}</td>
+                <MetricTd pres={p.adr} format={(v) => fmtMetric(v, 'float1')} words={STATE_WORD} />
               </tr>
             {/each}
           </tbody>
@@ -109,16 +89,10 @@
         <table class="data-table">
           <tbody>
             {#each data.other as p (p.steam)}
-              <tr
-                class="clickable"
-                onclick={(e) => {
-                  if (e.target instanceof Element && e.target.closest('button')) return;
-                  follow(p.steam);
-                }}
-              >
+              <tr class="clickable" tabindex="0" {...openRow(() => follow(p.steam), { ignore: CONTROL_SELECTOR, enterOnly: true })}>
                 <td>{p.name}</td>
                 <td class="num">{p.kda}</td>
-                <td class="num">{p.adr}</td>
+                <MetricTd pres={p.adr} format={(v) => fmtMetric(v, 'float1')} words={STATE_WORD} />
               </tr>
             {/each}
           </tbody>

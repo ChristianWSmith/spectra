@@ -1,24 +1,19 @@
 <script>
-  import { namesOf, rosterOf } from '../../builtinhelpers.js';
+  import ProfileLink from '../../components/ProfileLink.svelte';
+  import SortTh from '../../components/SortTh.svelte';
+  import { namesOf, rosterOf, openRow, CONTROL_SELECTOR, whileCurrent, S, fmtMetric, fmtInt } from '../../builtinhelpers.js';
   import { sideSwitchesOf } from '../../builtinhelpers.js';
-  import { openRow } from '../../keys.js';
-  import { whileCurrent } from '../../current.js';
-  import * as S from '../../strings/index.js';
   import {
-    readFrameBase,
-    SQL_ROSTER,
-    SQL_TEAMS,
-    SQL_SWITCHES,
-    startClass,
-    readUnit,
-    cellValue,
-    matchPres,
-    STATE_WORD,
-    sortRows,
-  } from './panelhelpers.js';
-  import { fmtMetric } from '../../fmt.js';
-  import MetricCell from '../../components/MetricCell.svelte';
-  import { DASH, isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
+  readFrameBase,
+  startClass,
+  readUnit,
+  cellValue,
+  matchPres,
+  STATE_WORD,
+  sortRows,
+} from './panelhelpers.js';
+  import MetricTd from '../../components/MetricTd.svelte';
+  import { DASH, isSteam } from '../../builtinhelpers.js';
   const SCOREBOARD_COLUMNS = [
     ['kills', S.match.scoreK, 'int'],
     ['deaths', S.match.scoreD, 'int'],
@@ -76,19 +71,15 @@
     whileCurrent((isCurrent) => {
       const matchId = context.matchId;
       sortStack = [{ key: 'kills', desc: true }];
-      load(matchId).then(
-        (d) => {
-          if (isCurrent()) data = d;
-        },
-        () => {
-          // A failed read is reported into this frame by the read API.
-        },
-      );
+      // A failed read goes to the frame banner (the default sink of spectra.loadThen).
+      spectra.loadThen(isCurrent, load(matchId), (d) => {
+        data = d;
+      });
     }),
   );
 
   // The value a row sorts on for one key: the name, the side code, the score,
-  // or a stored value (the same keys the old view's chain sorted on).
+  // or a stored value.
   function sortValueOf(key, p) {
     if (key === 'name') return p.name;
     if (key === 'side') return p.side;
@@ -106,14 +97,14 @@
     else sortStack = [...sortStack, { key, desc: true }];
   }
 
-  // A metric header's tooltip: its formula, as the old view showed it (the
-  // catalog's doc, else the metric name), plus the engine's error when it failed.
+  // A metric header's tooltip: its formula (the catalog's doc, else the metric
+  // name), plus the engine's error when it failed.
   function headerTitle(metric) {
     const u = data.byMetric.get(metric);
     return (u.doc || metric) + (u.error ? S.builtins.couldntCalculate + u.error : '');
   }
 
-  const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
+  const follow = (steam) => spectra.followPlayer(steam, back);
 
   function ariaSort(key) {
     if (sortKey !== key) return 'none';
@@ -126,19 +117,11 @@
     <table class="data-table scoreboard">
       <thead>
         <tr>
-          <th scope="col" class="num" aria-sort={ariaSort('name')}>
-            <button class="th-sort" onclick={() => toggleSort('name')}>{S.match.colName}</button>
-          </th>
-          <th scope="col" class="num" aria-sort={ariaSort('side')}>
-            <button class="th-sort" onclick={() => toggleSort('side')}>{S.match.colTeam}</button>
-          </th>
-          <th scope="col" class="num" aria-sort={ariaSort('score')}>
-            <button class="th-sort" onclick={() => toggleSort('score')}>{S.match.colScore}</button>
-          </th>
+          <SortTh label={S.match.colName} cls="num" ariaSort={ariaSort('name')} active={sortKey === 'name'} desc={sortDesc} onclick={() => toggleSort('name')} />
+          <SortTh label={S.match.colTeam} cls="num" ariaSort={ariaSort('side')} active={sortKey === 'side'} desc={sortDesc} onclick={() => toggleSort('side')} />
+          <SortTh label={S.match.colScore} cls="num" ariaSort={ariaSort('score')} active={sortKey === 'score'} desc={sortDesc} onclick={() => toggleSort('score')} />
           {#each COLUMNS as c (c.metric)}
-            <th scope="col" class="num" title={headerTitle(c.metric)} aria-sort={ariaSort(c.metric)}>
-              <button class="th-sort" onclick={() => toggleSort(c.metric)}>{c.label}</button>
-            </th>
+            <SortTh label={c.label} cls="num" title={headerTitle(c.metric)} ariaSort={ariaSort(c.metric)} active={sortKey === c.metric} desc={sortDesc} onclick={() => toggleSort(c.metric)} />
           {/each}
         </tr>
       </thead>
@@ -148,19 +131,11 @@
           <tr
             class="clickable"
             tabindex="0"
-            {...openRow(() => follow(p.steam), { ignore: 'button, a', enterOnly: true })}
+            {...openRow(() => follow(p.steam), { ignore: CONTROL_SELECTOR, enterOnly: true })}
           >
             <td class="num name-cell {cls}">
               {#if isSteam(p.steam)}
-                <button
-                  class="btn ghost small name-link {cls}"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    openPlayer(spectra, p.steam);
-                  }}
-                >
-                  {p.name}
-                </button>
+                <ProfileLink steam={p.steam} name={p.name} nav={spectra.navigate} variant="name-link" stopRow cls={cls} />
               {:else}
                 {p.name}
               {/if}
@@ -171,17 +146,16 @@
               </span>
             </td>
             <td class="num">
-              {Number.isFinite(Number(p.score)) ? Math.round(Number(p.score)).toLocaleString() : DASH}
+              {fmtInt(Number(p.score))}
             </td>
             {#each COLUMNS as c (c.metric)}
               {@const u = data.byMetric.get(c.metric)}
-              <td class="num" title={u.error || undefined}>
-                <MetricCell
-                  pres={matchPres(u, p.steam)}
-                  format={(v) => fmtMetric(v, c.format)}
-                  words={STATE_WORD}
-                />
-              </td>
+              <MetricTd
+                pres={matchPres(u, p.steam)}
+                format={(v) => fmtMetric(v, c.format)}
+                words={STATE_WORD}
+                title={u.error}
+              />
             {/each}
           </tr>
         {/each}

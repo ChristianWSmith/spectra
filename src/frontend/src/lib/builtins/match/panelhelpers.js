@@ -3,14 +3,7 @@
 // registry lists which names a panel may take. Formatting follows lib/fmt.js,
 // lib/teams.js and lib/rounds.js (the rules the panels always showed); a
 // missing or NULL stored value is a dash, never a zero (ruling 23).
-import * as S from '../../strings/index.js';
-import { DASH, SQL_ROSTER, SQL_TEAMS, asTick, rowOf } from '../../builtinhelpers.js';
-import { teamStartClass } from '../../teams.js';
-import { fmtMetric, fmtBytes, fmtDate, fmtDuration } from '../../fmt.js';
-import { readMetrics } from '../../metricreads.js';
-import { metricPresentation } from '../../metricstate.js';
-import { compareAsc } from '../../sortstate.js';
-import { errText } from '../../services.js';
+  import { DASH, SQL_ROSTER, SQL_TEAMS, asTick, rowOf, S, teamStartClass, fmtMetric, fmtBytes, fmtDate, fmtDuration, metricPresentation, compareAsc } from '../../builtinhelpers.js';
 export { fmtBytes, fmtDate, fmtDuration };
 
 // The read-only SQL the panels run is defined once, in builtinhelpers.js.
@@ -56,9 +49,7 @@ export const SQL_FACTS =
 
 // HELPERS
 
-// The team colour class: the team's START side (the side it began the
-// match on), after the match's side switches (lib/teams.js teamStartClass).
-// The team colour class of a side at the start of the match (teams.js).
+// The team colour class of a side at the start of the match (lib/teams.js teamStartClass).
 export const startClass = teamStartClass;
 
 // One stored value as its text (lib/fmt.js fmtMetric's rules).
@@ -70,7 +61,7 @@ export const STATE_WORD = {
 
 // A metric read for this match: its state and each player's value.
 export async function readUnit(spectra, name) {
-  const m = (await readMetrics(spectra, [name], errText)).get(name);
+  const m = (await spectra.readMetrics([name])).get(name);
   const map = new Map();
   for (const r of m.rows) map.set(r.subject, r.value);
   return { state: m.state, error: m.error || '', doc: m.doc || '', map };
@@ -82,13 +73,13 @@ export function matchPres(u, key) {
   return metricPresentation(u.state, u.map.has(key) ? { value: u.map.get(key) } : null, false);
 }
 
-// cellText is the same presentation as text, for the joined cells (kda, the
-// overview's K/D/A line).
 // kdaText is a player's K/D/A line: the three counts, each as its cell text.
 export function kdaText(kills, deaths, assists, key) {
   return [cellText(kills, key, 'int'), cellText(deaths, key, 'int'), cellText(assists, key, 'int')].join('/');
 }
 
+// cellText is the same presentation as text, for the joined cells (kda, the
+// overview's K/D/A line).
 export function cellText(u, key, format) {
   const p = matchPres(u, key);
   if (p.kind === 'value') return fmtMetric(p.value, format);
@@ -100,16 +91,13 @@ export function cellValue(u, key) {
   return u.state === 'fresh' && u.map.has(key) ? u.map.get(key) : null;
 }
 
-// The team display name of a side: the demo's clan name, else the
-// synthesized team_<player> name (lowest SteamID on the side), else CT / T.
-
 // readFrameBase is the base reads of a match panel, in order: the roster, the team
 // rows and the side switches. A panel spreads it into its Promise.all.
 export function readFrameBase(spectra) {
   return [spectra.query(SQL_ROSTER), spectra.query(SQL_TEAMS), spectra.query(SQL_SWITCHES)];
 }
 
-// The chained sort (the old Match view's rule): each stack entry is applied
+// The chained sort: each stack entry is applied
 // to the sequence the earlier entries produced, so the newest key is the
 // primary and the earlier keys break its ties. Every step breaks ties on
 // the incoming index, so a key whose values are all tied moves nothing. A
@@ -136,10 +124,6 @@ export function sortRows(rows, stack, valueOf) {
   return out;
 }
 
-// The humans of this match in the default order (kills DESC, name ASC):
-// [steamId, name, side, score]. Bots are filtered here, as the scoreboard
-// always did.
-
 // {placeholder} fill for catalog copy: the strings catalog's fill.
 export const fill = S.fill;
 
@@ -147,9 +131,6 @@ export function roundLabel(n) {
   if (n >= 1) return String(n);
   return n === -2 ? S.builtins.roundLabelKnife : S.builtins.roundLabelWarmup;
 }
-
-// A player's colour in one round: the side they had in that round, else the
-// match's start-side colour for the player (never a guess).
 
 // The round row of a rounds read, shaped for the panel.
 const ROUND_SPEC = {

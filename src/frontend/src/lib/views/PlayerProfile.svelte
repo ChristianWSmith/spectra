@@ -21,6 +21,7 @@
 
   let profile = $state(null);
   let profileError = $state('');
+  let suggestError = $state('');
 
   // Player picker: every player in the library (listPlayers('') — the
   // same source the Profiles view and the Library's player facet use),
@@ -39,7 +40,9 @@
       .then((rows) => {
         if (live) players = listedPlayers(rows) || [];
       })
-      .catch(() => {});
+      .catch((e) => {
+        if (live) suggestError = errText(e);
+      });
     return () => (live = false);
   });
 
@@ -103,6 +106,7 @@
     <div class="spacer"></div>
     <label class="sr-only" for="prof-q">Search players</label>
     <SuggestInput
+      onerror={(e) => (suggestError = errText(e))}
       id="prof-q"
       wrapClass="prof-picker"
       ariaLabel="Search players"
@@ -114,6 +118,12 @@
     />
   </header>
 
+  {#if suggestError}
+    <p class="error" role="alert">
+      {suggestError}
+      <button class="btn small ghost" aria-label={S.common.dismissErrorLine} title={S.common.dismissErrorLine} onclick={() => (suggestError = '')}><span class="codicon codicon-close" aria-hidden="true"></span></button>
+    </p>
+  {/if}
   {#if profileError}
     <p class="error" role="alert">
       {profileError}

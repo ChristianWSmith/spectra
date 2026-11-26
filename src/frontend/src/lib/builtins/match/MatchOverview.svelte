@@ -1,10 +1,8 @@
 <script>
-  import { sideSwitchesOf } from '../../builtinhelpers.js';
-  import { openRow } from '../../keys.js';
-  import { loadForMatch } from '../../current.js';
-  import * as S from '../../strings/index.js';
+  import ProfileLink from '../../components/ProfileLink.svelte';
+  import { sideSwitchesOf, openRow, CONTROL_SELECTOR, loadForMatch, S } from '../../builtinhelpers.js';
   import { SQL_ROSTER, SQL_SWITCHES, STATE_WORD, readUnit, cellText, kdaText } from './panelhelpers.js';
-  import { isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
+  import { isSteam } from '../../builtinhelpers.js';
   import LoadBox from '../../components/LoadBox.svelte';
 
   // Match overview cards: the five identity metrics of the match, one card
@@ -39,8 +37,9 @@
     const switches = sideSwitchesOf(switchRows);
     const who = new Map(roster.rows.map((r) => [r[0], { name: r[1], side: r[2] }]));
     const out = [];
+    const reads = await spectra.readMetrics(CARDS.map((c) => c.metric));
     for (const card of CARDS) {
-      const m = await spectra.metric(card.metric);
+      const m = reads.get(card.metric);
       if (m.state === 'no-data') continue;
       let steam = null;
       let value = '';
@@ -85,10 +84,11 @@
         cards = res.cards;
         ready = true;
       },
+      (e) => spectra.report(e),
     ),
   );
 
-  const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
+  const follow = (steam) => spectra.followPlayer(steam, back);
 </script>
 
 <section class="match-overview">
@@ -101,21 +101,13 @@
             role="button"
             tabindex="0"
             title={c.title || undefined}
-            {...openRow(() => c.steam && follow(c.steam), { ignore: 'button', enterOnly: true })}
+            {...openRow(() => c.steam && follow(c.steam), { ignore: CONTROL_SELECTOR, enterOnly: true })}
           >
             <span class="field-label">{c.label}</span>
             <span class="stat-value">{c.value}</span>
             <span class="stat-sub">
               {#if c.steam && isSteam(c.steam)}
-                <button
-                  class="btn ghost small name-link"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    openPlayer(spectra, c.steam);
-                  }}
-                >
-                  {c.name}
-                </button>
+                <ProfileLink steam={c.steam} name={c.name} nav={spectra.navigate} variant="name-link" stopRow />
               {:else}
                 {c.name}
               {/if}

@@ -1,20 +1,12 @@
 <script>
-  import RetryButton from '../../components/RetryButton.svelte';
   import EmptyNote from '../../components/EmptyNote.svelte';
-  import { openMatch, DASH } from '../../builtinhelpers.js';
-  import { openRow } from '../../keys.js';
-  import { whileCurrent, latestOnly } from '../../current.js';
+  import { openMatch, openRow, whileCurrent, latestOnly, listMetrics, getCareerTrend, errText, inSequence, fmtMetric, fmtPercent, fmtDate, fmtPatch, seed, remember, S } from '../../builtinhelpers.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   // Career trend (builtin profile panel): one match-scope metric across the
   // context's player's matches, as a sparkline. The picker offers every
   // match-scope metric in the default sequence and sends the metric NAME to
   // the series read. The picked metric is this panel's own view state.
-  import { listMetrics, getCareerTrend, errText } from '../../services.js';
-  import { inSequence } from '../../metricorder.js';
-  import { fmtMetric, fmtPercent, fmtDate, fmtPatch } from '../../fmt.js';
-  import { seed, remember } from '../../viewstate.svelte.js';
   import SuggestInput from '../../components/SuggestInput.svelte';
-  import * as S from '../../strings/index.js';
 
   let { spectra, context } = $props();
   const steamId = $derived(context.steamId);
@@ -27,7 +19,6 @@
   let trend = $state([]);
   let trendError = $state('');
   let trendDefs = $state([]);
-  let trendText = $state('');
   // A plain counter (not state): the read's generation, so a stale result drops.
   const runTrend = latestOnly();
 
@@ -38,8 +29,12 @@
         .then((defs) => {
           if (isCurrent()) trendDefs = defs || [];
         })
-        .catch(() => {
-          if (isCurrent()) trendDefs = []; // a failed catalog read offers nothing — never a guess
+        .catch((e) => {
+          // A failed catalog read offers nothing (never a guess), and the frame says why.
+          if (isCurrent()) {
+            trendDefs = [];
+            spectra.report(e);
+          }
         });
     }),
   );
@@ -47,28 +42,29 @@
   // The default sequence over the match scope (no order preference is read).
   const trendItems = $derived(inSequence('match', trendDefs));
 
-  // A selection the loaded catalog no longer carries falls back to the
-  // default, but only from a non-default selection.
-  $effect(() => {
-    if (trendDefs.length === 0) return;
-    if (metric !== 'adr' && !trendItems.some((d) => d.name === metric)) metric = 'adr';
-  });
+  // The metric the panel shows and loads: the pick, or the default when the loaded
+  // catalog no longer carries a non-default pick. `metric` keeps the user's pick, so
+  // a fallback is never saved over it.
+  const activeMetric = $derived(
+    trendDefs.length > 0 && metric !== 'adr' && !trendItems.some((d) => d.name === metric) ? 'adr' : metric,
+  );
 
   const trendLabel = $derived.by(() => {
-    const def = trendItems.find((d) => d.name === metric);
+    const def = trendItems.find((d) => d.name === activeMetric);
     if (def) return def.title || def.name;
-    return metric === 'adr' ? S.profiles.thAdr : metric;
+    return activeMetric === 'adr' ? S.profiles.thAdr : activeMetric;
   });
-  $effect(() => (trendText = trendLabel));
+  // The picker's text: the label of the picked metric, until the user types (a writable derived).
+  let trendText = $derived(trendLabel);
 
   // The picked metric's format tag: the trend formatter's input.
-  const trendFormat = $derived(trendItems.find((d) => d.name === metric)?.format || '');
+  const trendFormat = $derived(trendItems.find((d) => d.name === activeMetric)?.format || '');
 
   // The trend read: mount, metric switch and Retry. The error clears only
   // when the read lands, so "No trend data" never stands in for a failed read.
   function loadTrend() {
     const sid = steamId;
-    const m = metric;
+    const m = activeMetric;
     trendError = '';
     if (!sid) return;
     runTrend(
@@ -95,12 +91,6 @@
   // Hand-rolled sparkline: x = Seq (the trend's patch order), y = Value. Each
   // dot's tooltip carries the patch and the honest import date, read off the
   // trend point itself.
-  // The sparkline's caption: the point count, the min and max at display scale.
-  const sparkCaption = $derived(
-    spark
-      ? `${trend.length}${S.profiles.sparkMinLead}${fmtTrendValue(spark.min, trendFormat)}${S.profiles.sparkMaxLead}${fmtTrendValue(spark.max, trendFormat)}`
-      : '',
-  );
   const spark = $derived.by(() => {
     const pts = trend;
     if (pts.length < 2) return null;
@@ -140,6 +130,12 @@
       })),
     };
   });
+  // The sparkline's caption: the point count, the min and max at display scale.
+  const sparkCaption = $derived(
+    spark
+      ? `${trend.length}${S.profiles.sparkMinLead}${fmtTrendValue(spark.min, trendFormat)}${S.profiles.sparkMaxLead}${fmtTrendValue(spark.max, trendFormat)}`
+      : '',
+  );
 </script>
 
 <div>
@@ -149,6 +145,7 @@
          offered through the one suggestion dropdown. -->
     <SuggestInput
       id="prof-trend"
+      onerror={(e) => spectra.report(e)}
       wrapClass="prof-trend-pick"
       kind="text"
       items={trendItems}
@@ -164,10 +161,7 @@
     />
   </div>
   {#if trendError}
-    <ErrorBanner>
-      {trendError}
-      <RetryButton onretry={loadTrend} label={S.profiles.retry} />
-    </ErrorBanner>
+    <ErrorBanner onretry={loadTrend} retryLabel={S.profiles.retry}>{trendError}</ErrorBanner>
   {:else if spark}
     <svg
       class="prof-spark"

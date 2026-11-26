@@ -1,32 +1,10 @@
 <script>
-  import { indexBy, groupBy } from '../../builtinhelpers.js';
-  import RetryButton from '../../components/RetryButton.svelte';
-  import { compareAsc } from '../../sortstate.js';
+  import { indexBy, groupBy, compareAsc, latestOnly, whileCurrent, listReportTemplates, listPlayers, getRounds, listMetrics, getMetricComputeState, errText, getScoreboard, getMetricValuesForMatch, renderReport, getPlayerRefs, listedPlayers, seed, remember, S, inSequence, composedSequence, rawItems, isRawId, metricPresentation, metricStateTitle, liveMetricState, liveMetrics, downloadText } from '../../builtinhelpers.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
   import { DASH } from '../../builtinhelpers.js';
-  import { whileCurrent } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
-  import {
-    listReportTemplates,
-    listPlayers,
-    getRounds,
-    listMetrics,
-    getMetricComputeState,
-    errText,
-    getScoreboard,
-    getMetricValuesForMatch,
-    renderReport,
-    getPlayerRefs,
-  } from '../../services.js';
-  import { listedPlayers } from '../../players.js';
-  import { seed, remember } from '../../viewstate.svelte.js';
   import PlayerPicker from '../../components/PlayerPicker.svelte';
-  import * as S from '../../strings/index.js';
   import { findTemplate, reportFilename, targetReady, compositeText } from './shared.js';
-  import { inSequence, composedSequence, rawItems, isRawId } from '../../metricorder.js';
-  import { metricPresentation, metricStateTitle, liveMetricState } from '../../metricstate.js';
-  import { liveMetrics } from '../../metricslive.svelte.js';
-  import { downloadText } from '../../download.js';
   import TokenSelect from '../../components/TokenSelect.svelte';
   import StatusChip from '../../components/StatusChip.svelte';
 
@@ -128,8 +106,9 @@
           m.steamId = m.players[0].steamId;
         }
       })
-      .catch(() => {
-        /* the player picker stays hidden until it loads */
+      .catch((e) => {
+        // The picker stays hidden until the list loads; the failure is the frame's to show.
+        spectra.report(e);
       });
   });
 
@@ -139,17 +118,24 @@
 
   // The match's rounds: the round input's ceiling, and the clamp of a round
   // that the new match does not have.
-  $effect(() => {
-    const id = matchId;
-    if (!id) return;
-    getRounds(id)
-      .then((rs) => {
-        m.rounds = rs || [];
-        const max = (rs || []).reduce((x, r) => Math.max(x, r.number), 0);
-        if (m.roundNo > max) m.roundNo = Math.max(1, max);
-      })
-      .catch(() => (m.rounds = []));
-  });
+  $effect(() =>
+    whileCurrent((isCurrent) => {
+      const id = matchId;
+      if (!id) return;
+      getRounds(id)
+        .then((rs) => {
+          if (!isCurrent()) return;
+          m.rounds = rs || [];
+          const max = (rs || []).reduce((x, r) => Math.max(x, r.number), 0);
+          if (m.roundNo > max) m.roundNo = Math.max(1, max);
+        })
+        .catch((e) => {
+          if (!isCurrent()) return;
+          m.rounds = [];
+          spectra.report(e);
+        });
+    }),
+  );
 
   // --- the templates and target block ---
   // The Reports template and target panel (builtin, composed by ReportsView):
@@ -205,10 +191,11 @@
           }
           m.seeds = out;
         })
-        .catch(() => {
+        .catch((e) => {
           if (isCurrent()) {
             m.sbBySteam = {};
             m.seeds = new Map();
+            spectra.report(e);
           }
         });
     }),
@@ -263,10 +250,10 @@
   // appendix: id -> { loading, rows?, error?, metric | raw, unitHasRows }. One
   // stored read for the whole picked set; a raw pick reads the scoreboard.
   let appendix = $state({});
-  let appendixGen = 0;
+  // Only the newest appendix load applies; an older one that lands late is dropped.
+  const runAppendix = latestOnly();
 
   $effect(() => {
-    const gen = ++appendixGen;
     const mid = matchId;
     sweep.reload; // metric-done: refetch the stored rows
     const rawSel = rawOffer.filter((r) => m.rawStats.includes(r.id));
@@ -280,7 +267,7 @@
     for (const id of sel) pending[id] = { loading: true, metric: defs.get(id) };
     for (const r of rawSel) pending[r.id] = { loading: true, raw: r };
     appendix = pending;
-    spectra
+    const loading = spectra
       .track(
         Promise.all([
           sel.length ? getMetricValuesForMatch(mid, sel) : Promise.resolve([]),
@@ -289,7 +276,6 @@
         ]),
       )
       .then(([values, refs, board]) => {
-        if (gen !== appendixGen) return;
         const bySteam = new Map((refs || []).map((r) => [r.steamId, r.name]));
         const byMetric = groupBy(values || [], (v) => v.metricId);
         const next = {};
@@ -322,15 +308,19 @@
           }));
           next[r.id] = { loading: false, rows: rawRows, raw: r, unitHasRows: rawRows.length > 0 };
         }
-        appendix = next;
-      })
-      .catch((e) => {
-        if (gen !== appendixGen) return;
+        return next;
+      });
+    runAppendix(
+      loading,
+      (next) => (appendix = next),
+      (e) => {
+        spectra.report(e);
         const next = {};
         for (const id of sel) next[id] = { loading: false, error: errText(e), metric: defs.get(id) };
         for (const r of rawSel) next[r.id] = { loading: false, error: errText(e), raw: r };
         appendix = next;
-      });
+      },
+    );
   });
 
   // The state machine for one entry: the live progress feed wins, then value,
@@ -440,10 +430,7 @@
     <ErrorBanner>{m.docError}</ErrorBanner>
   {/if}
   {#if m.tplError}
-    <ErrorBanner>
-      {m.tplError}
-      <RetryButton onretry={() => m.actions.loadTemplates()} label={S.reports.retry} />
-    </ErrorBanner>
+    <ErrorBanner onretry={() => m.actions.loadTemplates()} retryLabel={S.reports.retry}>{m.tplError}</ErrorBanner>
   {/if}
   <div class="rep-tpl-grid">
     {#each m.templates as t (t.id)}
@@ -482,6 +469,7 @@
             players={m.players}
             stats={m.sbBySteam}
             seeds={m.seeds}
+            onerror={(e) => spectra.report(e)}
             states={m.metricStates}
             value={m.steamId}
             id="rep-player"
@@ -507,10 +495,7 @@
   {/if}
 </div>
 {#if m.metricsError}
-  <ErrorBanner>
-    {m.metricsError}
-    <RetryButton onretry={() => m.actions.loadMetricsList()} label={S.reports.retry} />
-  </ErrorBanner>
+  <ErrorBanner onretry={() => m.actions.loadMetricsList()} retryLabel={S.reports.retry}>{m.metricsError}</ErrorBanner>
 {/if}
 
 <div>

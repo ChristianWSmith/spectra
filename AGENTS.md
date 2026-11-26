@@ -357,23 +357,34 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   (`componentruntime/readapi.js`): `metric(name, binds)` (stored values
   with the five states), `query(sql, binds)` (a live read-only read with no
   freshness), `context` (the mounting surface's match, steam id and round;
-  binds default from it), `navigate`, `guard(fn)` for event and async work,
+  binds default from it), `navigate`, `guard(fn)` for event and async work, `report(error)`
+  for a failed load's frame banner, and `loadForMatch(getMatchId, load, apply, failed?)` (the
+  effect body of a match load, failures to the frame banner; the convention is in `lib/current.js`),
   `isHuman` and `listedPlayers`, `liveMetrics()` (a panel's metric progress and
   reload wiring, `lib/metricslive.svelte.js`), the shared helpers `readMetrics(names)`
-  (bound to the frame's read API and error text), `metricPresentation`, `fmtMetric`, `activateOnKey` and `whileCurrent` (the same
+  (bound to the frame's read API and error text), `metricPresentation`, `fmtMetric`, `fmtDate`,
+  `fmtDuration`, `openMatch(id)`, `openPlayer(steamId)`, `activateOnKey` and `whileCurrent` (the same
   modules the builtins import), `dash` (the one missing-value dash) and `ui` (the shared
-  display components: `ui.ErrorBanner`, `ui.EmptyNote`, `ui.MetricCell`, `ui.WinnerCell`,
-  `ui.StatCard`, `ui.StatusChip`), and `<spectra.Child>` to mount a named
+  display components: `ui.ErrorBanner` (with `onretry`), `ui.EmptyNote`, `ui.EmptyTableRow`,
+  `ui.LoadBox`, `ui.MetricCell`, `ui.MetricTd`, `ui.RetryButton`, `ui.SortTh`, `ui.WinnerCell`, `ui.StatCard`,
+  `ui.StatusChip`), and `<spectra.Child>` to mount a named
   component inside another. A failed `metric()` or `query()` is reported
   into the component's frame and also rejects. Each component renders
   inside its own error boundary. There is no sandbox: components run in the
   webview with the app's bindings.
-- **Helper surface.** A builtin may import a curated set of app modules:
-  the `BUILTIN_HELPERS` registry in `componentruntime/compile.js` lists
-  each module and the names a builtin may take from it. A user component
-  may import nothing, and the save gate refuses every import from one. A
-  new helper name is a review: add it to the registry with a line on what
-  it is for.
+- **Helper surface.** A builtin imports only three things: Svelte components
+  (`components/*.svelte`, and its own `.svelte` files), `builtinhelpers.js`, and the
+  builtins’ own modules under `builtins/` (`panelhelpers.js`, `shared.js`, the combat
+  modules). `builtinhelpers.js` is the one gateway to the app: it re-exports every app
+  helper a builtin takes (strings as `S`, `fmt`, `current`, `services`, `keys`, `nav`, the
+  heatmap and economy helpers). The `BUILTIN_HELPERS` registry in
+  `componentruntime/compile.js` lists the names a builtin may take from each module
+  (the gate checks it). A user component
+  may import only the public Svelte runtime modules listed in
+  `RUNTIME_MODULES` (`svelte`, `svelte/store`, `svelte/motion`, and the
+  rest of that list); the save gate refuses every other import, and every
+  app module, from one. A new helper name is a review: add it to the
+  registry with a line on what it is for.
 - **Builtin registry and generator.** Builtin panels are `.svelte` files
   under `frontend/src/lib/builtins/`, declared in `builtins/panels.js`.
   `frontend/scripts/gen-builtin-sources.mjs` (run by `npm run build` and
@@ -416,11 +427,11 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `.svelte` first. Every builtin is a `.svelte` file: the Match panels
   (`builtins/match/Match*.svelte`), the Economy and Utility views
   (`builtins/econ/`, `builtins/util/`). Shared
-  helpers are real modules that a builtin imports by relative path: the
-  Economy and Utility helpers in `builtinhelpers.js`, the Match panels'
-  in `builtins/match/panelhelpers.js`. Each module is registered in
-  `BUILTIN_HELPERS` (`componentruntime/compile.js`) with the names a
-  builtin may take.
+  helpers are real modules: the app helpers a builtin takes come through
+  `builtinhelpers.js`, and a builtin’s own helpers (the Match panels'
+  `builtins/match/panelhelpers.js`, the profile `shared.js`) are imported by relative
+  path. The names a builtin may take from `builtinhelpers.js` are registered in
+  `BUILTIN_HELPERS` (`componentruntime/compile.js`).
 - **Builtin edits are in place, with restore.** A builtin component,
   metric or report is edited in place. Save stores one row per edited
   builtin in `builtin_overrides` (keys `builtin-…`, `metric:<name>`,

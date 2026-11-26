@@ -1,7 +1,5 @@
 <script>
-  import { plural } from '../../fmt.js';
-  import { economySource } from '../../economysource.svelte.js';
-  import * as S from '../../strings/index.js';
+  import { plural, economySource, S } from '../../builtinhelpers.js';
   // Economy view: the rounds, the economy rows and the team names, loaded once
   // for the three panels below. Each panel mounts with this frame's context
   // (the match) and the Match view's back path.
