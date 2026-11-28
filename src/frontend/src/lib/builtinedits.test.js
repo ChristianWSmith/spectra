@@ -104,6 +104,25 @@ test('(a) built-in helper modules import only helperdefs, svelte, and their own 
   }
 });
 
+// No special privilege: a built-in helper module takes from helperdefs.js only the names
+// BUILTIN_HELPERS lists, the same list a user component gets from spectra/helpers.
+test('(a) built-in helper modules take only listed names from helperdefs.js', () => {
+  const listed = new Set(Object.keys(BUILTIN_HELPERS['src/lib/builtinhelpers.js'].names));
+  const modules = [
+    'builtins/profile/shared.js', 'builtins/reports/shared.js', 'builtins/match/panelhelpers.js',
+    'builtins/match/combatdata.js', 'builtins/match/combatpanel.svelte.js', 'builtins/profile/splittable.svelte.js',
+  ];
+  for (const m of modules) {
+    const text = readFileSync(new URL('./' + m, import.meta.url), 'utf8');
+    for (const im of text.matchAll(/import\s*\{([^}]*)\}\s*from\s*'[^']*helperdefs\.js'/g)) {
+      for (const p of im[1].split(',').map((x) => x.trim()).filter(Boolean)) {
+        const name = p.split(/\s+as\s+/)[0];
+        assert.ok(listed.has(name), `${m} imports ${name} from helperdefs.js, which BUILTIN_HELPERS does not list`);
+      }
+    }
+  }
+});
+
 // The curated surface: every listed name is exported by its module (read from
 // the module's source, since the modules themselves need the Wails bindings).
 test('(a) every curated helper name is exported by its module', () => {

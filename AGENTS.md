@@ -412,8 +412,9 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   component may take, with a line on what it is for; an unlisted name is refused.
   The surface has no writes. Stored data changes only through the `spectra` prop
   (`ReadApi`: `freeDemoCopy`, `saveText`, `saveCanvasPNG`), which a component cannot import.
-  Built-ins get no other privilege at save: the untracked-reference check applies to
-  both.
+  Built-ins get no other privilege: the untracked-reference check applies to both, and a
+  built-in helper module takes from helperdefs.js only the names BUILTIN_HELPERS lists
+  (builtinedits.test.js pins it).
 - **Builtin registry and generator.** Builtin panels are `.svelte` files
   under `frontend/src/lib/builtins/`, declared in `builtins/panels.js`.
   `frontend/scripts/gen-builtin-sources.mjs` (run by `npm run build` and
