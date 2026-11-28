@@ -34,29 +34,8 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
-      - name: Generate builtin sources
-        run: node scripts/gen-builtin-sources.mjs
+      - name: Unit tests (generates the builtin sources first)
+        run: npm test
 
-      - name: Unit tests
-        run: node --test src/lib/*.test.js src/lib/componentruntime/*.test.js src/lib/editor/*.test.js
-
-      - name: DOM harnesses
-        shell: bash
-        run: |
-          set -u
-          failed=0
-          for f in test/*.dom.mjs; do
-            out=$(mktemp)
-            if ! timeout 300 node "$f" > "$out" 2>&1; then
-              echo "::error file=src/frontend/$f::exited non-zero"
-              failed=1
-            fi
-            if grep -E '  FAIL|UNCAUGHT' "$out" > /dev/null; then
-              echo "::error file=src/frontend/$f::reported a failure"
-              grep -E '  FAIL|UNCAUGHT' "$out" | head -20
-              failed=1
-            fi
-            echo "== $f"; tail -n 3 "$out"
-            rm -f "$out"
-          done
-          exit $failed
+      - name: DOM harnesses (exit code and FAIL/UNCAUGHT lines)
+        run: npm run test:dom

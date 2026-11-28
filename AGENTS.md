@@ -49,6 +49,23 @@ make cs2find ARGS='find --prefix sounds/weapons/c4/'  # in-repo dev tool (read-o
 make deep-clean CONFIRM=1   # DESTRUCTIVE: wipes the XDG-selected instance's data+config dirs (library DB included); prints a dry-run listing and refuses without CONFIRM=1 or while spectra runs
 ```
 
+### The canonical full suite
+
+`make test-full` is the one full suite (run it before a commit that touches Go
+or the frontend, and before any push to main). It runs, in order:
+
+1. `make vet`, `make lint`, `make test` (Go).
+2. `cd frontend && npm test`: generates the builtin sources, then the node unit suite
+   (`src/**/*.test.js`).
+3. `npm run test:dom`: every jsdom harness (`test/*.dom.mjs`). A harness fails on a
+   non-zero exit **or** any `FAIL`/`UNCAUGHT` line, because a harness can print a failure
+   and still exit 0. `scripts/test-dom.mjs` is the runner; CI calls the same script.
+4. `npm run build`: the production build (Svelte compile, Vite, no circular-import errors).
+
+Not in the suite: `test/browser/*.browser.mjs` (needs a Chromium binary, run locally), and
+the GUI checks (see Visual smoke tests). `npm run test:all` is the frontend half
+(steps 2–4).
+
 `make test` / `make vet` / `make lint` create a stub `frontend/dist/` when
 missing so `//go:embed` compiles on a fresh clone; the first real build
 replaces it. The `wails3` CLI is required on PATH for build/package (the
@@ -383,19 +400,20 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   into the component's frame and also rejects. Each component renders
   inside its own error boundary. There is no sandbox: components run in the
   webview with the app's bindings.
-- **Helper surface.** A builtin imports only three things: Svelte components
-  (`components/*.svelte`, and its own `.svelte` files), `builtinhelpers.js`, and the
-  builtins’ own modules under `builtins/` (`panelhelpers.js`, `shared.js`, the combat
-  modules). `builtinhelpers.js` is the one gateway to the app: it re-exports every app
-  helper a builtin takes (strings as `S`, `fmt`, `current`, `services`, `keys`, `nav`, the
-  heatmap and economy helpers). The `BUILTIN_HELPERS` registry in
-  `componentruntime/compile.js` lists the names a builtin may take from each module
-  (the gate checks it). A user component
-  may import only the public Svelte runtime modules listed in
-  `RUNTIME_MODULES` (`svelte`, `svelte/store`, `svelte/motion`, and the
-  rest of that list); the save gate refuses every other import, and every
-  app module, from one. A new helper name is a review: add it to the
-  registry with a line on what it is for.
+- **Helper surface (one rule for built-ins and user components).** A component
+  imports from exactly one module, `spectra/helpers` (`src/lib/builtinhelpers.js`,
+  aliased in Vite and in the compile-time import check). That barrel re-exports the
+  app helpers, the shared display components (`ErrorBanner`, `EmptyNote`, …) and the
+  built-ins' own helper modules; the definitions it re-exports live in `helperdefs.js`,
+  which builtin modules import directly to avoid a cycle. The Svelte runtime
+  (`RUNTIME_MODULES` in `componentruntime/compile.js`) is the only other allowed
+  import. Every relative path and every other app module is refused at save, for
+  built-ins and user components alike. `BUILTIN_HELPERS` (same file) lists each name a
+  component may take, with a line on what it is for; an unlisted name is refused.
+  The surface has no writes. Stored data changes only through the `spectra` prop
+  (`ReadApi`: `freeDemoCopy`, `saveText`, `saveCanvasPNG`), which a component cannot import.
+  Built-ins get no other privilege at save: the untracked-reference check applies to
+  both.
 - **Builtin registry and generator.** Builtin panels are `.svelte` files
   under `frontend/src/lib/builtins/`, declared in `builtins/panels.js`.
   `frontend/scripts/gen-builtin-sources.mjs` (run by `npm run build` and
@@ -438,11 +456,9 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `.svelte` first. Every builtin is a `.svelte` file: the Match panels
   (`builtins/match/Match*.svelte`), the Economy and Utility views
   (`builtins/econ/`, `builtins/util/`). Shared
-  helpers are real modules: the app helpers a builtin takes come through
-  `builtinhelpers.js`, and a builtin’s own helpers (the Match panels'
-  `builtins/match/panelhelpers.js`, the profile `shared.js`) are imported by relative
-  path. The names a builtin may take from `builtinhelpers.js` are registered in
-  `BUILTIN_HELPERS` (`componentruntime/compile.js`).
+  helpers are real modules: a built-in takes everything from `spectra/helpers`
+  (see Helper surface), including the Match panels' and the profile's own helpers.
+  The names it may take are registered in `BUILTIN_HELPERS` (`componentruntime/compile.js`).
 - **Builtin edits are in place, with restore.** A builtin component,
   metric or report is edited in place. Save stores one row per edited
   builtin in `builtin_overrides` (keys `builtin-…`, `metric:<name>`,
@@ -563,7 +579,7 @@ Canonical homes (extend these, don't fork them):
 | Stored-value cell presentation | `frontend/src/lib/metricstate.js` `metricPresentation` (value, dash or state) — THE one mapping from a read to what a cell shows, used by the profile `cell` and the match `matchPres`; drawn by `components/MetricCell.svelte` as a chip (with `sweep.chip`) or a word (`words`) |
 | Load that must not apply late | `frontend/src/lib/current.js` `whileCurrent` — the effect body for a load that depends on its inputs; `isCurrent()` gates the result. Never re-add a `let live = true` flag inline |
 | Source editor | `frontend/src/lib/components/SourceEditor.svelte` (the one source box: Monaco, or a textarea fallback when it cannot load) over `frontend/src/lib/editor/monaco.js` (the lazy loader, the Go-template language, the completion adapter). Completion lists are pure: `editor/sqlCompletions.js`, `editor/templateCompletions.js`, `editor/helperCatalog.js` (the component helpers, checked against the frame by `componentHelperCatalog.test.js`), with their data in `editor/completionSources.js`. |
-| Builtin helper names | `frontend/src/lib/builtinhelpers.js` re-exports the canonical function of each name (fmt.js, rounds.js, sideparity.js, teams.js, econ.js, nav.js); it holds no second implementation. A builtin imports the names it needs from there and nothing else |
+| Builtin helper names | `frontend/src/lib/helperdefs.js` holds the helper definitions (the canonical function of each name, re-using fmt.js, rounds.js, sideparity.js, teams.js, econ.js, nav.js); `builtinhelpers.js` is the surface (`spectra/helpers`) that re-exports them with the shared components. A built-in or a user component imports the names it needs from `spectra/helpers` and nothing else |
 | Listbox keyboard navigation | `frontend/src/lib/listnav.js` — THE arrow, wrap-around and Enter handling of an option list (`stepActive`, `onListKey`) and its scroll-into-view (`scrollActive`). Pickers and suggestion lists use it; never re-write the arrow handling inline |
 | Metric progress and reload wiring | `frontend/src/lib/metricslive.svelte.js` `liveMetrics()` — THE one place a panel subscribes to sweep progress and the metric-done event; components reach it through the `spectra` prop or the BUILTIN_HELPERS entry. Never re-add the subscribe pair inline |
 | Progress presentation | `PRODUCT.md` `### Defaults` — THE statement (Progress presentation); never restate it in this file |

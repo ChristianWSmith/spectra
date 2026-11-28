@@ -1,14 +1,14 @@
 <script>
-  import ErrorBanner from '../../components/ErrorBanner.svelte';
-  import LoadBox from '../../components/LoadBox.svelte';
+  import { ErrorBanner } from 'spectra/helpers';
+  import { LoadBox } from 'spectra/helpers';
   // Match details: one panel with the match's facts. The key facts (server, tickrate,
   // frames, size, import time, parser, warnings, source file) and the voice and demo
   // copy state come first; then the import details (the reproducibility facts and the
   // encrypted-message note) and the advanced diagnostics (the entity summary). A NULL or
   // missing stored value shows a dash. Every read is through this frame's context.
-  import { SQL_FACTS, numOf, fmtBytes, parseStamp, fmtDate, fill } from './panelhelpers.js';
-  import { DASH, fmtInt, fmt1, loadThen, whileCurrent, latestOnly, S, getMatch, getVoicePresence, evictDemoCopy, getProvenance, getEntitySummary, errText } from '../../builtinhelpers.js';
-  import StatusChip from '../../components/StatusChip.svelte';
+  import { SQL_FACTS, numOf, fmtBytes, parseStamp, fmtDate, fill } from 'spectra/helpers';
+  import { DASH, fmtInt, fmt1, loadThen, whileCurrent, latestOnly, S, getMatch, getVoicePresence, getProvenance, getEntitySummary, errText } from 'spectra/helpers';
+  import { StatusChip } from 'spectra/helpers';
 
   const COPY = Object.freeze({
     keyFacts: S.match.keyFacts,
@@ -122,7 +122,7 @@
     copyBusy = true;
     copyError = '';
     try {
-      await evictDemoCopy(context.matchId);
+      await spectra.freeDemoCopy(context.matchId);
       match = await getMatch(context.matchId);
     } catch (e) {
       copyError = errText(e);

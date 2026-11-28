@@ -1,3 +1,4 @@
+import { BUILTIN_HELPERS, HELPERS_SPECIFIER } from '../componentruntime/compile.js';
 // The helpers a user component can use, by name: the `spectra` prop, the
 // pieces under `spectra.ui`, and the fields of the `context` prop. This is the
 // one list the component builder's completions read. componentHelperCatalog.test.js
@@ -23,7 +24,10 @@ export const SPECTRA_HELPERS = [
   value('busy', 'boolean', 'True while any read or tracked load is in flight.'),
   call('whileCurrent', 'run', 'For a load started in an effect: run receives isCurrent(), and a late result is dropped once the inputs change.'),
   call('liveMetrics', '{ onDone }', "A panel's metric progress and reload wiring: progress, frac(id), stage(id), chip(def), and reload, which grows each time a metric finishes."),
-  call('navigate', 'route', 'Opens a view: a hash such as #/match/…, or { path, query }.'),
+  call('freeDemoCopy', 'matchId', "Frees Spectra's own copy of a match's demo (the Free copy action). The one write a component can make; it resolves when the copy is gone."),
+  call('saveText', 'filename, mime, text', 'Saves a text file through the native save dialog (CSV, JSON, Markdown, HTML). Resolves to the path it wrote, or to an empty string when the user cancels.'),
+  call('saveCanvasPNG', 'canvas, filename', 'Saves a canvas as a PNG through the native save dialog. Resolves to the path it wrote, or to an empty string when the user cancels.'),
+  call('navigate', 'route','Opens a view: a hash such as #/match/…, or { path, query }.'),
   call('guard', 'fn', "Wraps an event or async handler so its error goes to the component's box instead of being lost."),
   call('activateOnKey', 'fn, { enterOnly }', 'Makes a clickable row work from the keyboard: Enter, and Space unless enterOnly is set.'),
   call('isHuman', 'row', 'True unless the roster row is a bot.'),
@@ -66,10 +70,31 @@ export const CONTEXT_FIELDS = [
   { name: 'round', detail: 'context.round', doc: 'The round the component is mounted on, or null.' },
 ];
 
+// importNameItems offers each name the helper surface lists, for an import's braces.
+function importNameItems() {
+  const names = Object.values(BUILTIN_HELPERS)[0].names;
+  return Object.entries(names)
+    .filter(([n]) => n !== '*' && n !== 'default')
+    .map(([n, doc]) => ({
+      label: n,
+      kind: /^[A-Z]/.test(n) && n !== n.toUpperCase() ? 'component' : 'function',
+      detail: `from ${HELPERS_SPECIFIER}`,
+      doc,
+      insert: n,
+      snippet: false,
+    }));
+}
+
 // componentCompletions returns the items for a component source at the cursor.
 // linePrefix is the text of the line before the cursor: after `spectra.ui.` the
 // ui pieces are offered, after `spectra.` the helpers, after `context.` its fields.
 export function componentCompletions(linePrefix) {
+  // Inside an import's braces: the names the helper surface lists (the same list the save gate checks).
+  if (/\bimport\s*\{[^}]*$/.test(linePrefix)) return importNameItems();
+  // After `from '`: the one module a component imports from.
+  if (/\bfrom\s*['"][^'"]*$/.test(linePrefix)) {
+    return [{ label: HELPERS_SPECIFIER, kind: 'property', detail: 'the helper surface', doc: "Every helper, shared component and built-in helper a component may import. Nothing else can be imported.", insert: HELPERS_SPECIFIER, snippet: false }];
+  }
   if (/\bspectra\.ui\.\w*$/.test(linePrefix)) {
     return UI_PIECES.map((p) => ({ label: p.name, kind: 'component', detail: p.detail, doc: p.doc, insert: p.name, snippet: false }));
   }

@@ -7,6 +7,9 @@
     "dev": "node scripts/gen-builtin-sources.mjs && vite",
     "build:dev": "node scripts/gen-builtin-sources.mjs && vite build --minify false --mode development",
     "build": "node scripts/gen-builtin-sources.mjs && vite build --mode production",
+    "test": "node scripts/gen-builtin-sources.mjs && node --test 'src/**/*.test.js'",
+    "test:dom": "node scripts/test-dom.mjs",
+    "test:all": "npm test && npm run test:dom && npm run build",
     "preview": "vite preview"
   },
   "dependencies": {

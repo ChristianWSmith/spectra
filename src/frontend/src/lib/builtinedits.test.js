@@ -38,33 +38,41 @@ test('(a) each generated panel source compiles under the built-in rules', async 
 
 // Every helper the built-in panels import is listed, and the built-in rules
 // refuse a helper name the registry does not list (ruling 45).
-test('(a) built-in imports are curated: an unlisted name or module is refused', async () => {
+test('(a) built-in imports are curated: spectra/helpers and its listed names only', async () => {
   const dir = 'src/lib/builtins/profile';
   const ok = await checkComponentSource(`<script>
-  import { fmt1 } from '../../fmt.js';
+  import { fmt1 } from 'spectra/helpers';
   let { spectra } = $props();
 </script>
 <p>{fmt1(1)}</p>`, 'Component.svelte', dir);
   assert.equal(ok.ok, true, ok.message);
+  // An unlisted name is refused at its line.
   const name = await checkComponentSource(`<script>
-  import { saveMetric } from '../../services.js';
+  import { saveMetric } from 'spectra/helpers';
   let { spectra } = $props();
 </script>
 <p>x</p>`, 'Component.svelte', dir);
   assert.equal(name.ok, false);
   assert.equal(name.line, 2);
   assert.match(name.message, /cannot import saveMetric from/);
-  const mod = await checkComponentSource(`<script>
-  import { x } from '../../not-a-helper.js';
+  // A relative app module is refused for a built-in as for a user component.
+  const rel = await checkComponentSource(`<script>
+  import { fmt1 } from '../../fmt.js';
   let { spectra } = $props();
 </script>
-<p>x</p>`, 'Component.svelte', dir);
-  assert.equal(mod.ok, false);
-  assert.equal(mod.line, 2);
+<p>{fmt1(1)}</p>`, 'Component.svelte', dir);
+  assert.equal(rel.ok, false);
+  assert.equal(rel.line, 2);
 });
 
-// A user component imports nothing: the built-in rules are not its rules.
-test('(a) a user component cannot import a helper', async () => {
+// A user component takes the same surface as a built-in, and nothing else.
+test('(a) a user component imports the listed helpers, and no relative path', async () => {
+  const ok = await checkComponentSource(`<script>
+  import { fmt1, ErrorBanner } from 'spectra/helpers';
+  let { spectra } = $props();
+</script>
+<ErrorBanner>{fmt1(1)}</ErrorBanner>`);
+  assert.equal(ok.ok, true, ok.message);
   const r = await checkComponentSource(`<script>
   import { fmt1 } from '../../fmt.js';
   let { spectra } = $props();
@@ -74,12 +82,35 @@ test('(a) a user component cannot import a helper', async () => {
   assert.equal(r.line, 2);
 });
 
+// The built-in modules that are not panels (helperdefs and the panel helper modules) import
+// only the helper definitions, the Svelte runtime, and each other: never an app module by path.
+test('(a) built-in helper modules import only helperdefs, svelte, and their own siblings', async () => {
+  const { readdirSync, statSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const walk = (dir) => readdirSync(dir).flatMap((f) => {
+    const p = join(dir, f);
+    if (f === 'generated' || f === 'panels.js') return []; // panels.js is the registry, not a helper module
+    return statSync(p).isDirectory() ? walk(p) : p.endsWith('.js') ? [p] : [];
+  });
+  const files = walk(new URL('./builtins/', import.meta.url).pathname);
+  assert.ok(files.length > 0);
+  for (const file of files) {
+    const text = readFileSync(file, 'utf8');
+    for (const m of text.matchAll(/(?:\bfrom\s+|\bimport\s*\(\s*|^\s*import\s+)'([^']+)'/gm)) {
+      const spec = m[1];
+      const ok = spec === 'svelte' || spec === 'spectra/helpers' || spec === '../../helperdefs.js' || /^\.\/[\w.\/-]+\.js$/.test(spec) || /^\.\.\/[\w.\/-]+\.js$/.test(spec) && !spec.startsWith('../../');
+      assert.ok(ok, `${file} imports ${spec}: a built-in helper module imports only helperdefs.js, svelte, or a sibling`);
+    }
+  }
+});
+
 // The curated surface: every listed name is exported by its module (read from
 // the module's source, since the modules themselves need the Wails bindings).
 test('(a) every curated helper name is exported by its module', () => {
   for (const [key, h] of Object.entries(BUILTIN_HELPERS)) {
     if (key.startsWith('bindings/') || key.endsWith('.svelte')) continue;
-    const text = readFileSync(new URL('../../' + key, import.meta.url), 'utf8');
+    // The barrel re-exports helperdefs.js: a name counts as exported by either file.
+    const text = readFileSync(new URL('../../' + key, import.meta.url), 'utf8') + (key === 'src/lib/builtinhelpers.js' ? readFileSync(new URL('./helperdefs.js', import.meta.url), 'utf8') : '');
     for (const name of Object.keys(h.names)) {
       if (name === '*' || name === 'default') continue;
       const exported = new RegExp(`export\\s+(const|let|function|async function|class)\\s+${name}\\b|export\\s*\\{[^}]*\\b${name}\\b`).test(text);

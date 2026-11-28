@@ -18,7 +18,7 @@
   // the active tab with its select, `tab` and `ontab`, which only the URL can
   // supply (see the note at `tab` below).
   import { onMount } from 'svelte';
-  import { matchPath, matchTab, loadLoopSecs, S, MATCH_TABS, matchTabSlug, LOOP_SECS_DEFAULT, seed, remember, matchKey } from '../../builtinhelpers.js';
+  import { matchPath, matchTab, loadLoopSecs, S, MATCH_TABS, matchTabSlug, LOOP_SECS_DEFAULT, seed, remember, matchKey } from 'spectra/helpers';
 
   let {
     spectra,

@@ -1,5 +1,5 @@
 <script>
-  import { DASH } from '../builtinhelpers.js';
+  import { DASH } from '../helperdefs.js';
   import { stepActive, onListKey } from '../listnav.js';
   // SuggestInput — the ONE suggestion dropdown behind every "search
   // input that offers what is actually in the library" (the canonical

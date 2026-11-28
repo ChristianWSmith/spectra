@@ -1,4 +1,4 @@
-  import { metricStateTitle, metricPresentation, listMetrics, getProfile, DEFAULT_CARDS, composedSequence } from '../../builtinhelpers.js';
+  import { metricStateTitle, metricPresentation, listMetrics, getProfile, DEFAULT_CARDS, composedSequence } from '../../helperdefs.js';
 // shared.js — the presentation rules the Profile panels share. A panel reads
 // its values through `spectra.metric()` (a MetricRead: state, value, rows),
 // and this module maps one read onto what a cell shows: a value, the honest

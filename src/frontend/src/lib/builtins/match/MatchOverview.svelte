@@ -1,9 +1,9 @@
 <script>
-  import ProfileLink from '../../components/ProfileLink.svelte';
-  import { sideSwitchesOf, openRow, CONTROL_SELECTOR, loadForMatch, S } from '../../builtinhelpers.js';
-  import { SQL_ROSTER, SQL_SWITCHES, STATE_WORD, readUnit, cellText, kdaText } from './panelhelpers.js';
-  import { isSteam } from '../../builtinhelpers.js';
-  import LoadBox from '../../components/LoadBox.svelte';
+  import { ProfileLink } from 'spectra/helpers';
+  import { sideSwitchesOf, openRow, CONTROL_SELECTOR, loadForMatch, S } from 'spectra/helpers';
+  import { SQL_ROSTER, SQL_SWITCHES, STATE_WORD, readUnit, cellText, kdaText } from 'spectra/helpers';
+  import { isSteam } from 'spectra/helpers';
+  import { LoadBox } from 'spectra/helpers';
 
   // Match overview cards: the five identity metrics of the match, one card
   // each, in their default order (top fragger, best ADR, most util, entry

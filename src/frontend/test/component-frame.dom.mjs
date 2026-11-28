@@ -12,6 +12,7 @@ import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
 import { compile } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { aliasHelpers } from './helpers-alias.mjs';
 import { copyClosure } from './copy-closure.mjs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -84,7 +85,7 @@ copyClosure({
   ],
   skip: new Map([
     ['componentruntime/compileclient.js', `export * from '${compileClientUrl}';\n`],
-    ['componentruntime/reads.js', 'export const serviceReads = {};\n'],
+    ['componentruntime/reads.js', 'export const serviceReads = {};\nexport const serviceWrites = {};\n'],
     ['builtins/panels.js', 'export function builtinPanelById() { return null; }\n'],
   ]),
 });

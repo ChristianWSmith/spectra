@@ -56,6 +56,13 @@ test: | frontend/dist
 lint: | frontend/dist
 	go tool golangci-lint run ./...
 
+# test-full — THE canonical full suite (AGENTS.md "Canonical full suite"): Go vet, lint and tests,
+# then the frontend's test:all (the node unit suite, every DOM harness, the production build).
+# Run it before a commit that touches either side, and before any push to main.
+test-full: | frontend/dist
+	$(MAKE) vet lint test
+	cd frontend && npm test && npm run test:dom && npm run build
+
 # deadscan — report-only dead-code scan over Go (cmd/deadscan), the frontend
 # JS/Svelte and the CSS (frontend/scripts/deadscan.mjs). Never edits or fails:
 # every line is a candidate to verify by hand (see the script headers).

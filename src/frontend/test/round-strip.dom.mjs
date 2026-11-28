@@ -110,8 +110,8 @@ if (rsSrc.includes('kvstore')) {
   console.log('  FAIL RoundStrip imports the kvstore — the visibility pref is retired');
   process.exit(1);
 }
-// The bundle sits at the cache root, so its builtinhelpers import is the root copy.
-svelteCompile(rsSrc.replace("from '../builtinhelpers.js'", "from './builtinhelpers.js'"), 'RoundStrip.svelte', join(dir, 'roundstrip-bundle.js'));
+// The bundle sits at the cache root, so its helperdefs import is the root copy.
+svelteCompile(rsSrc.replace("from '../helperdefs.js'", "from './helperdefs.js'"), 'RoundStrip.svelte', join(dir, 'roundstrip-bundle.js'));
 
 const harnessSrc = readFileSync('test/round-strip.harness.svelte', 'utf8');
 svelteCompile(harnessSrc, 'harness.svelte', join(dir, 'harness.js'));

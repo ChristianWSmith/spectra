@@ -11,7 +11,7 @@
 //   });
 
 import { onMount } from 'svelte';
-  import { roundSideClassOf, openReplay, matchTab, errText, loadLoopSecs, LOOP_SECS_DEFAULT, whileCurrent } from '../../builtinhelpers.js';
+  import { roundSideClassOf, openReplay, matchTab, errText, loadLoopSecs, LOOP_SECS_DEFAULT, whileCurrent } from '../../helperdefs.js';
 import { loadCombatSide } from './combatdata.js';
 
 export function combatPanel(getSpectra, getMatchId, { read, apply }) {

@@ -65,6 +65,9 @@ import * as S from '../strings/index.js';
  *   guard: <F extends (...args: any[]) => any>(fn: F) => F,
  *   isHuman: typeof isHuman,
  *   listedPlayers: typeof listedPlayers,
+ *   freeDemoCopy: (matchId: number) => Promise<any>,
+ *   saveText: (filename: string, mime: string, text: string) => Promise<string>,
+ *   saveCanvasPNG: (canvas: HTMLCanvasElement, filename: string) => Promise<string>,
  * }} ReadApi
  */
 
@@ -260,7 +263,7 @@ export async function metricsByMatch(reads, steamId, names, matchIds) {
  *   context?: () => {matchId?: number|null, steamId?: string|null, round?: number|null}}} deps
  * @returns {ReadApi}
  */
-export function createReadApi({ reads, report, nav, context = () => ({}) }) {
+export function createReadApi({ reads, writes = null, report, nav, context = () => ({}) }) {
   const reported = new WeakSet();
   const fail = (e) => {
     const err = toError(e);
@@ -363,9 +366,40 @@ export function createReadApi({ reads, report, nav, context = () => ({}) }) {
     );
   }
 
+  /** @type {ReadApi['saveText']} */
+  async function saveText(filename, mime, text) {
+    try {
+      if (!writes || !writes.saveText) throw new Error(S.components.writeUnavailable);
+      return await writes.saveText(String(filename), String(mime), String(text));
+    } catch (e) {
+      throw fail(e);
+    }
+  }
+
+  /** @type {ReadApi['saveCanvasPNG']} */
+  async function saveCanvasPNG(canvas, filename) {
+    try {
+      if (!writes || !writes.saveCanvasPNG) throw new Error(S.components.writeUnavailable);
+      return await writes.saveCanvasPNG(canvas, String(filename));
+    } catch (e) {
+      throw fail(e);
+    }
+  }
+
+  /** @type {ReadApi['freeDemoCopy']} */
+  async function freeDemoCopy(matchId) {
+    try {
+      // The one named write a component may make (a component never imports a write).
+      if (!writes || !writes.freeDemoCopy) throw new Error(S.components.writeUnavailable);
+      return await writes.freeDemoCopy(Number(matchId));
+    } catch (e) {
+      throw fail(e);
+    }
+  }
+
   // One player's values and states across many matches in one batched read
   // (the History read). Same rule as metric(): see metricsByMatch above.
   const byMatch = (steamId, names, matchIds) => metricsByMatch(reads, steamId, names, matchIds);
 
-  return Object.freeze({ metric, metricsByMatch: byMatch, query, navigate, guard, isHuman, listedPlayers });
+  return Object.freeze({ metric, metricsByMatch: byMatch, query, navigate, guard, isHuman, listedPlayers, freeDemoCopy, saveText, saveCanvasPNG });
 }

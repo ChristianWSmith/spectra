@@ -59,8 +59,8 @@ export function generate(root = FRONTEND) {
     idLines.push(`  ${JSON.stringify(id)},`);
     const text = readFileSync(resolve(dir, file), 'utf8');
     lines.push(`  ${JSON.stringify(id)}: ${JSON.stringify(text)},`);
-    // The panel's directory, frontend-relative: a built-in's relative imports
-    // resolve against it (compile.js BUILTIN_HELPERS).
+    // The panel's directory, frontend-relative. Built-ins import only spectra/helpers, so
+    // this is the compile-cache key that keeps a built-in's compile apart from a user component's.
     const panelDir = 'src/lib/builtins/' + file.replace(/^\.\//, '').replace(/\/[^/]+$/, '');
     dirLines.push(`  ${JSON.stringify(id)}: ${JSON.stringify(panelDir)},`);
   }

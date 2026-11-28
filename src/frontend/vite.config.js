@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import wails from "@wailsio/runtime/plugins/vite";
+import { fileURLToPath } from "node:url";
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -10,6 +11,12 @@ export default defineConfig({
     strictPort: true,
   },
   plugins: [svelte(), wails("./bindings")],
+  // The one import surface a component uses (AGENTS.md "Helper surface"): built-ins
+  // and user components both write 'spectra/helpers'. componentruntime/compile.js
+  // maps the same specifier at compile time.
+  resolve: {
+    alias: [{ find: /^spectra\/helpers$/, replacement: fileURLToPath(new URL("./src/lib/builtinhelpers.js", import.meta.url)) }],
+  },
   // The compile worker (src/lib/componentruntime/compile.worker.js) loads
   // svelte/compiler by dynamic import, which needs an ES-module worker.
   worker: { format: "es" },

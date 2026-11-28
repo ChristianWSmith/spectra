@@ -1,13 +1,13 @@
 <script>
-  import { loadThen, whileCurrent, liveMetrics, fmtMetric } from '../../builtinhelpers.js';
+  import { loadThen, whileCurrent, liveMetrics, fmtMetric } from 'spectra/helpers';
   // Career headline cards (builtin profile panel). The profile-scope metrics
   // of the default selection (DEFAULT_CARDS.profile, in the default sequence),
   // one card each. Every value is one metric() read for the context's player.
   // Pinning is retired (owner ruling 33): this panel shows the default set and
   // reads no preference.
-  import StatCard from '../../components/StatCard.svelte';
-  import MetricCell from '../../components/MetricCell.svelte';
-  import { loadProfile, readCell, defaultCardDefs } from './shared.js';
+  import { StatCard } from 'spectra/helpers';
+  import { MetricCell } from 'spectra/helpers';
+  import { loadProfile, readCell, defaultCardDefs } from 'spectra/helpers';
 
   let { spectra, context } = $props();
   const steamId = $derived(context.steamId);

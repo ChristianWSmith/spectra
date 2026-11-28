@@ -20,7 +20,7 @@ registerHooks({
     return nextResolve(specifier, context);
   },
 });
-const copies = await import('./builtinhelpers.js');
+const copies = await import('./helperdefs.js');
 import { fmtMs, fmtClock, fmtMoney, fmtInt, roundClock, fmtZeroDash, chatClock, chatTag } from './fmt.js';
 import { roundIndexLabel, roundScoreLabel, separatorFlags, moneyResetIndexes, roundStartTick, roundEndTick, isCounted } from './rounds.js';
 import { teamNames, playerSideClassAt, teamStartClass } from './teams.js';

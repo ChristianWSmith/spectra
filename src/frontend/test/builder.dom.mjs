@@ -381,7 +381,7 @@ const plSrc = readFileSync('src/lib/components/ProfileLink.svelte', 'utf8')
   .replace("from '../nav.js'", `from '${fileURL('src/lib/nav.js')}'`)
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`)
-  .replace("from '../builtinhelpers.js'", `from '${fileURL('src/lib/builtinhelpers.js')}'`);
+  .replace("from '../helperdefs.js'", `from '${fileURL('src/lib/helperdefs.js')}'`);
 svelteCompile(plSrc, 'ProfileLink.svelte', join(dir, 'profilelink.js'));
 
 // SortTh (the preview table's sortable headers) — a leaf apart from

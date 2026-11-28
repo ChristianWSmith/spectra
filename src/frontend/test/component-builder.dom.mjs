@@ -29,6 +29,7 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { installEsmDirHook } from './esm-dir-hook.mjs';
 import { reachesSvelte } from './bundle-reach.mjs';
+import { aliasHelpers } from './helpers-alias.mjs';
 
 installEsmDirHook();
 
@@ -86,18 +87,18 @@ function bundle(absPath) {
   if (compiled.has(absPath)) return compiled.get(absPath);
   const out = join(cacheDir, `${String(++seq).padStart(2, '0')}-${absPath.split('/').pop()}.js`);
   compiled.set(absPath, out);
-  const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
+  const src = aliasHelpers(readFileSync(absPath, 'utf8'), absPath).replace(/(from |import\()'(\.{1,2}\/[^']+)'/g, (whole, lead, rel) => {
     const target = resolve(dirname(absPath), rel);
-    if (target.endsWith('.svelte.js')) return `from '${pathToFileURL(bundle(target)).href}'`;
-    if (target.endsWith('.svelte')) return `from '${pathToFileURL(bundle(target)).href}'`;
+    if (target.endsWith('.svelte.js')) return `${lead}'${pathToFileURL(bundle(target)).href}'`;
+    if (target.endsWith('.svelte')) return `${lead}'${pathToFileURL(bundle(target)).href}'`;
     // A .js module that imports a .svelte file (the builtin panel registry) is
     // bundled too; every other .js stays where it is.
     // A .js that reaches a .svelte through its own imports (resolve.js → builtins/panels.js)
     // is rewritten like its importer; every other .js stays where it is.
     if (target.endsWith('.js') && reachesSvelte(target)) {
-      return `from '${pathToFileURL(bundle(target)).href}'`;
+      return `${lead}'${pathToFileURL(bundle(target)).href}'`;
     }
-    return `from '${pathToFileURL(target).href}'`;
+    return `${lead}'${pathToFileURL(target).href}'`;
   });
   if (absPath.endsWith('.svelte')) writeFileSync(out, compile(src, { filename: absPath, generate: 'client' }).js.code);
   else if (/\.svelte\.js$/.test(absPath)) writeFileSync(out, compileModule(src, { filename: absPath, generate: 'client' }).js.code);
@@ -108,7 +109,7 @@ const viewBundle = bundle(resolve('src/lib/views/ComponentBuilder.svelte'));
 
 const { mount, unmount, flushSync } = await import('svelte');
 const bindings = await import('./stubs/bindings.mjs');
-const services = await import(pathToFileURL(resolve('src/lib/services.js')).href);
+const services = await import(pathToFileURL(bundle(resolve('src/lib/services.js'))).href);
 const S = await import(pathToFileURL(resolve('src/lib/strings/index.js')).href);
 const { builtinShippedSource } = await import(pathToFileURL(resolve('src/lib/componentbuiltins.js')).href);
 const View = (await import(pathToFileURL(viewBundle).href)).default;

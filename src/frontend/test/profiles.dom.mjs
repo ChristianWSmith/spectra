@@ -63,6 +63,7 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { registerHooks } from 'node:module';
 import { installEsmDirHook } from './esm-dir-hook.mjs';
+import { aliasHelpers } from './helpers-alias.mjs';
 
 installEsmDirHook();
 
@@ -239,11 +240,11 @@ function bundleSvelte(absPath, outName = null) {
     ? join(dir, outName)
     : join(dir, `${String(++bundleSeq).padStart(3, '0')}-${absPath.split('/').pop()}.js`);
   bundled.set(absPath, out);
-  const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
+  const src = aliasHelpers(readFileSync(absPath, 'utf8'), absPath).replace(/(from |import\()'(\.{1,2}\/[^']+)'/g, (whole, lead, rel) => {
     const target = resolve(dirname(absPath), rel);
-    if (target.endsWith('.svelte') || target.endsWith('.svelte.js')) return `from '${fileURL(bundleSvelte(target))}'`;
-    if (target.endsWith('.js') && importsSvelte(target)) return `from '${fileURL(bundleSvelte(target))}'`;
-    return `from '${fileURL(target)}'`;
+    if (target.endsWith('.svelte') || target.endsWith('.svelte.js')) return `${lead}'${fileURL(bundleSvelte(target))}'`;
+    if (target.endsWith('.js') && importsSvelte(target)) return `${lead}'${fileURL(bundleSvelte(target))}'`;
+    return `${lead}'${fileURL(target)}'`;
   });
   if (absPath.endsWith('.svelte')) svelteCompile(src, absPath, out);
   else if (absPath.endsWith('.svelte.js')) writeFileSync(out, compileModule(src, { filename: absPath, generate: 'client' }).js.code);
@@ -421,7 +422,7 @@ document.body.removeChild(root);
 // The read-cache flush the sections below drive (services.invalidate —
 // every cachedRead key) — declared HERE because E's series/catalog
 // stubs must land before its mount.
-const { invalidate } = await import(pathToFileURL('src/lib/services.js').href);
+const { invalidate } = await import(pathToFileURL(bundleSvelte(resolve('src/lib/services.js'))).href);
 // The K/D/A halves read the match-grain SERIES now (the owner ruling of
 // 2026-11-17 — the metrics system IS the gameplay-statistics layer), so
 // the catalog and the series read must be in place BEFORE this mount:

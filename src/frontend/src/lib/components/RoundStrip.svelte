@@ -21,7 +21,7 @@
 // every 3 OT rounds after that (27, 30, 33, …) — and only while another
 // counted round follows, so a match ending on a boundary cell gets no
 // dangling marker (the gating lives in ../rounds.js separatorFlags).
-  import { DASH, roundsTabHash } from '../builtinhelpers.js';
+  import { DASH, roundsTabHash } from '../helperdefs.js';
 import { sideAtRound } from '../sideparity.js';
 import { teamStartClass } from '../teams.js';
 import { roundIndexLabel, separatorFlags } from '../rounds.js';

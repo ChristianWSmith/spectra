@@ -13,7 +13,9 @@ import {
   getMetricStates,
   getMetricSeries,
   componentQuery,
+  evictDemoCopy,
 } from '../services.js';
+import { downloadCanvasPNG, downloadText } from '../download.js';
 import { metricsByMatch as readMetricsByMatch } from './readapi.js';
 
 export const serviceReads = Object.freeze({
@@ -25,6 +27,15 @@ export const serviceReads = Object.freeze({
   getMetricStates,
   getMetricSeries,
   componentQuery,
+});
+
+// The component write surface (ReadApi.freeDemoCopy). Kept out of
+// serviceReads and out of the helper registry: only the frame's spectra prop
+// reaches it, and no component can import it.
+export const serviceWrites = Object.freeze({
+  freeDemoCopy: (matchId) => evictDemoCopy(matchId),
+  saveText: (filename, mime, text) => downloadText(filename, mime, text),
+  saveCanvasPNG: (canvas, filename) => downloadCanvasPNG(canvas, filename),
 });
 
 // metricsByMatch is the History read for a built-in panel (the one curated

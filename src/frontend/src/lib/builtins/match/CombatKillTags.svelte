@@ -1,6 +1,6 @@
 <script>
-  import { DASH, S, getKillTags, roundClock, entryLoopAround, roundScoreLabel, roundsByNumber, matchRecord, KILL_TAG_DIST_DEF, KILL_TAG_KIND_TITLES } from '../../builtinhelpers.js';
-  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
+  import { DASH, S, getKillTags, roundClock, entryLoopAround, roundScoreLabel, roundsByNumber, matchRecord, KILL_TAG_DIST_DEF, KILL_TAG_KIND_TITLES } from 'spectra/helpers';
+  import { EmptyTableRow } from 'spectra/helpers';
   // Combat · Kill tags. The duels of
   // the match: round → time into round → killer vs victim → distance in
   // metres, ONE row per KILL (the kill's kind facts share the row, both chips
@@ -9,11 +9,11 @@
   // round <select> narrows the same list (round 1 by default, "All rounds"
   // on offer). It reads the match from `context` and nothing else but the
   // loop-length pref, which stays a plain pref (ruling 33).
-  import EventPlay from '../../components/EventPlay.svelte';
-  import ProfileLink from '../../components/ProfileLink.svelte';
-  import Popover from '../../components/Popover.svelte';
-  import { combatPanel } from './combatpanel.svelte.js';
-  import { KILL_TAG_KINDS, groupKillTags } from './combatmodel.js';
+  import { EventPlay } from 'spectra/helpers';
+  import { ProfileLink } from 'spectra/helpers';
+  import { Popover } from 'spectra/helpers';
+  import { combatPanel } from 'spectra/helpers';
+  import { KILL_TAG_KINDS, groupKillTags } from 'spectra/helpers';
 
   let { spectra, context } = $props();
   const id = $derived(context.matchId);

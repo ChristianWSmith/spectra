@@ -6,7 +6,7 @@
   import { fmtMetric, fmtDate, fmtDuration } from '../fmt.js';
   import { activateOnKey, openRow } from '../keys.js';
   import { whileCurrent, loadForMatch, loadThen, latestOnly } from '../current.js';
-  import { DASH, openMatch, openPlayer, followPlayer } from '../builtinhelpers.js';
+  import { DASH, openMatch, openPlayer, followPlayer } from '../helperdefs.js';
   import ErrorBanner from './ErrorBanner.svelte';
   import EmptyNote from './EmptyNote.svelte';
   import EmptyTableRow from './EmptyTableRow.svelte';
@@ -52,7 +52,7 @@
   import { loadComponent } from '../componentruntime/compile.js';
   import { createReadApi } from '../componentruntime/readapi.js';
   import LoadBox from './LoadBox.svelte';
-  import { serviceReads } from '../componentruntime/reads.js';
+  import { serviceReads, serviceWrites } from '../componentruntime/reads.js';
   import { attachFrame } from '../componentruntime/eventerrors.js';
   import { FRAME_KEY, frozenContext } from '../componentruntime/frameContext.js';
   import ChildFrame from './ChildFrame.svelte';
@@ -98,7 +98,7 @@
   };
   // One read API per mounted frame (its failures belong to this frame).
   // svelte-ignore state_referenced_locally
-  const api = createReadApi({ reads: reads || serviceReads, report, nav, context: () => ctx });
+  const api = createReadApi({ reads: reads || serviceReads, writes: serviceWrites, report, nav, context: () => ctx });
   // Reads in flight for this frame. While they run, the panel holds its space under its spinner
   // (spectra.busy), and the old values stay hidden until the new ones arrive.
   const load = createLoadState();

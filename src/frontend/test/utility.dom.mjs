@@ -31,6 +31,7 @@ await warm();
 // browser condition itself so `svelte` resolves to the client build)
 import { reachesSvelte } from './bundle-reach.mjs';
 import { registerHooks } from 'node:module';
+import { aliasHelpers } from './helpers-alias.mjs';
 
 // svelte's package exports pick the SERVER build without the `browser`
 // condition (mount() then throws "lifecycle_function_unavailable"), so the
@@ -121,15 +122,15 @@ function bundle(absPath) {
   if (compiled.has(absPath)) return compiled.get(absPath);
   const out = join(cacheDir, `${String(++seq).padStart(2, '0')}-${absPath.split('/').pop()}.js`);
   compiled.set(absPath, out);
-  const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
+  const src = aliasHelpers(readFileSync(absPath, 'utf8'), absPath).replace(/(from |import\()'(\.{1,2}\/[^']+)'/g, (whole, lead, rel) => {
     const target = resolve(dirname(absPath), rel);
-    if (target.endsWith('.svelte')) return `from '${pathToFileURL(bundle(target)).href}'`;
-    if (target.endsWith('.svelte.js')) return `from '${pathToFileURL(bundle(target)).href}'`;
-    if (target.endsWith('builtins/panels.js')) return `from '${pathToFileURL(panelStub).href}'`;
+    if (target.endsWith('.svelte')) return `${lead}'${pathToFileURL(bundle(target)).href}'`;
+    if (target.endsWith('.svelte.js')) return `${lead}'${pathToFileURL(bundle(target)).href}'`;
+    if (target.endsWith('builtins/panels.js')) return `${lead}'${pathToFileURL(panelStub).href}'`;
     // A .js that reaches the stubbed registry through its own imports (resolve.js) is
     // bundled too, so its import of the registry is rewritten.
-    if (target.endsWith('.js') && reachesSvelte(target)) return `from '${pathToFileURL(bundle(target)).href}'`;
-    return `from '${pathToFileURL(target).href}'`;
+    if (target.endsWith('.js') && reachesSvelte(target)) return `${lead}'${pathToFileURL(bundle(target)).href}'`;
+    return `${lead}'${pathToFileURL(target).href}'`;
   });
   writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code
     : /\.svelte\.js$/.test(absPath) ? compileModule(src, { filename: absPath, generate: 'client' }).js.code : src);

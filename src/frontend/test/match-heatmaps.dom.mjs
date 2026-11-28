@@ -1,4 +1,5 @@
 import './compile-worker-node.mjs';
+import { aliasHelpers } from './helpers-alias.mjs';
 import { copyClosure, fillServiceStub } from './copy-closure.mjs';
 // jsdom driver for the Heatmaps tab's card, mounted with a FIXED context
 // { matchId: 7 } the way the Heatmaps builtin mounts it. The services are
@@ -147,7 +148,8 @@ export const saveExport = async () => '';
 );
 
 // The panel itself, compiled from the real source with its imports rewritten.
-const panelSrc = readFileSync(join('src', 'lib', 'builtins', 'match', 'HeatmapsPanel.svelte'), 'utf8')
+const panelAbs = join('src', 'lib', 'builtins', 'match', 'HeatmapsPanel.svelte');
+const panelSrc = aliasHelpers(readFileSync(panelAbs, 'utf8'), panelAbs)
   .replace(/from '\.\.\/\.\.\/components\/(\w+)\.svelte'/g, "from '../../components/$1.js'")
   .replace(/from '\.\.\/\.\.\/\.\.\/\.\.\/bindings\/github\.com\/ChristianWSmith\/spectra'/, `from '${BINDINGS_STUB}'`);
 compileTo(strip(panelSrc), 'HeatmapsPanel.svelte', join(dir, 'builtins', 'match', 'HeatmapsPanel.js'));

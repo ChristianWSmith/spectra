@@ -1,14 +1,14 @@
 <script>
-  import { openMatch, indexBy, DASH, loadThen, whileCurrent, openRow, liveMetrics, fmt1, fmtDate, fmtInt, fmtMetric, teamStartClass, S } from '../../builtinhelpers.js';
+  import { openMatch, indexBy, DASH, loadThen, whileCurrent, openRow, liveMetrics, fmt1, fmtDate, fmtInt, fmtMetric, teamStartClass, S } from 'spectra/helpers';
   // Match history (builtin profile panel), most recent first. The match rows
   // (import date, map, result, score, starting side) are the player's recorded
   // history. The K/D/A, ADR and KAST cells are stored match-scope metrics read
   // for the context's player in ONE read: metricsByMatch takes the series of
   // every metric (one call) and each match's compute state (one call per row).
-  import MetricTd from '../../components/MetricTd.svelte';
-  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
+  import { MetricTd } from 'spectra/helpers';
+  import { EmptyTableRow } from 'spectra/helpers';
 
-  import { loadProfile, readCell } from './shared.js';
+  import { loadProfile, readCell } from 'spectra/helpers';
 
   let { spectra, context } = $props();
   const steamId = $derived(context.steamId);

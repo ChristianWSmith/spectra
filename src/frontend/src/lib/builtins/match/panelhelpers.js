@@ -1,13 +1,13 @@
 // The helpers the Match view's panels carry. The panels are Svelte builtins
-// that import these names; componentruntime/compile.js's BUILTIN_HELPERS
+// that import these names (spectra/helpers); componentruntime/compile.js's BUILTIN_HELPERS
 // registry lists which names a panel may take. Formatting follows lib/fmt.js,
 // lib/teams.js and lib/rounds.js (the rules the panels always showed); a
 // missing or NULL stored value is a dash, never a zero (ruling 23).
-  import { DASH, SQL_ROSTER, SQL_TEAMS, asTick, rowOf, S, teamStartClass, fmtMetric, fmtBytes, fmtDate, fmtDuration, metricPresentation, compareAsc } from '../../builtinhelpers.js';
+  import { DASH, SQL_ROSTER, SQL_TEAMS, asTick, rowOf, S, teamStartClass, fmtMetric, fmtBytes, fmtDate, fmtDuration, metricPresentation, compareAsc } from '../../helperdefs.js';
 export { fmtBytes, fmtDate, fmtDuration };
 
-// The read-only SQL the panels run is defined once, in builtinhelpers.js.
-export { SQL_ROSTER, SQL_TEAMS } from '../../builtinhelpers.js';
+// The read-only SQL the panels run is defined once, in helperdefs.js.
+export { SQL_ROSTER, SQL_TEAMS } from '../../helperdefs.js';
 // One round's detail: the round-scoped reads of the Rounds tab's expansion (the
 // :round bind is set with :match_id on every call — an explicit bind set replaces
 // the context's, so both are passed).

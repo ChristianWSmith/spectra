@@ -826,10 +826,10 @@ const staleExempt = [...exemptKeys].filter((k) => !candidates.has(k)).map((k) =>
 
 // Check B inputs: which svelte files still carry class-1 literals
 const inlineFiles = [...svelteLits].filter(([, lits]) => lits.length > 0).map(([file]) => file);
-// A built-in takes the catalog as S from builtinhelpers.js (which re-exports it), or imports it directly.
+// A built-in takes the catalog as S from spectra/helpers (which re-exports it), or imports it directly.
 const importsCatalog = (file) => {
   const text = readFileSync(path.join(SRC, file), 'utf8');
-  return /strings\/index\.js/.test(text) || /import\s*\{[^}]*\bS\b[^}]*\}\s*from\s*'[^']*builtinhelpers\.js'/.test(text);
+  return /strings\/index\.js/.test(text) || /import\s*\{[^}]*\bS\b[^}]*\}\s*from\s*'(?:[^']*builtinhelpers\.js|spectra\/helpers)'/.test(text);
 };
 
 // content inputs (class 3 — swept, reported, never failing)
@@ -1371,7 +1371,7 @@ test('Check E — input hints are verb-like: every placeholder’s first word is
 // ---------------------------------------------------------------------------
 const BUILTIN_JS_MODULES = [
   'frontend/src/lib/builtins/match/panelhelpers.js',
-  'frontend/src/lib/builtinhelpers.js',
+  'frontend/src/lib/helperdefs.js',
 ];
 const isBuiltinSvelte = (file) => file.startsWith('frontend/src/lib/builtins/') && !file.includes('/generated/');
 
@@ -1383,7 +1383,7 @@ const BUILTIN_NONCOPY = {
     { text: 'M', why: 'the SVG path command (move-to) of the curve line — drawing syntax, not copy' },
     { text: 'L', why: 'the SVG path command (line-to) of the curve line — drawing syntax, not copy' },
   ],
-  'frontend/src/lib/builtinhelpers.js': [
+  'frontend/src/lib/helperdefs.js': [
   ],
   'frontend/src/lib/builtins/match/panelhelpers.js': [
     { text: 'Z', why: 'the ISO 8601 UTC designator of the stored import time (date parsing), not copy' },

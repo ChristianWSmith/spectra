@@ -1,8 +1,8 @@
 <script>
-  import { bySide, openRoundsTab, openRow, economySource, S } from '../../builtinhelpers.js';
-  import EmptyNote from '../../components/EmptyNote.svelte';
-  import { DASH } from '../../builtinhelpers.js';
-  import WinnerCell from '../../components/WinnerCell.svelte';
+  import { bySide, openRoundsTab, openRow, economySource, S } from 'spectra/helpers';
+  import { EmptyNote } from 'spectra/helpers';
+  import { DASH } from 'spectra/helpers';
+  import { WinnerCell } from 'spectra/helpers';
   import {
   fmtMoney,
   moneyResetIndexes,
@@ -13,7 +13,7 @@
   teamStartClass,
   econColumns,
   econValue,
-} from '../../builtinhelpers.js';
+} from 'spectra/helpers';
 
   // Economy curve: hand-drawn SVG, one line per team, the winner strip under it.
   // Mounted by a composer, the economy comes from it (the props below). Mounted alone (a component preview),

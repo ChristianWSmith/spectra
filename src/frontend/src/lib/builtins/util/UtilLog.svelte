@@ -1,9 +1,9 @@
 <script>
-  import Popover from '../../components/Popover.svelte';
-  import ProfileLink from '../../components/ProfileLink.svelte';
-  import { groupBy, openReplay, sideBySteam, plural, S } from '../../builtinhelpers.js';
-  import { matchTab } from '../../builtinhelpers.js';
-  import EmptyNote from '../../components/EmptyNote.svelte';
+  import { Popover } from 'spectra/helpers';
+  import { ProfileLink } from 'spectra/helpers';
+  import { groupBy, openReplay, sideBySteam, plural, S } from 'spectra/helpers';
+  import { matchTab } from 'spectra/helpers';
+  import { EmptyNote } from 'spectra/helpers';
   import {
   roundSideClassOf,
   DASH,
@@ -14,7 +14,7 @@
   roundScoreLabel,
   roundsByNumber,
   entryLoopAround,
-} from '../../builtinhelpers.js';
+} from 'spectra/helpers';
 
   // Utility throw log: the kind, thrower and round filters, the count, and one
   // row per throw. The filter state lives in the composer (filt / setFilt).

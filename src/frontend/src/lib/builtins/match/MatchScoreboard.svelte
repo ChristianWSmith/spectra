@@ -1,8 +1,8 @@
 <script>
-  import ProfileLink from '../../components/ProfileLink.svelte';
-  import SortTh from '../../components/SortTh.svelte';
-  import { namesOf, rosterOf, openRow, CONTROL_SELECTOR, whileCurrent, S, fmtMetric, fmtInt } from '../../builtinhelpers.js';
-  import { sideSwitchesOf } from '../../builtinhelpers.js';
+  import { ProfileLink } from 'spectra/helpers';
+  import { SortTh } from 'spectra/helpers';
+  import { namesOf, rosterOf, openRow, CONTROL_SELECTOR, whileCurrent, S, fmtMetric, fmtInt } from 'spectra/helpers';
+  import { sideSwitchesOf } from 'spectra/helpers';
   import {
   readFrameBase,
   startClass,
@@ -11,9 +11,9 @@
   matchPres,
   STATE_WORD,
   sortRows,
-} from './panelhelpers.js';
-  import MetricTd from '../../components/MetricTd.svelte';
-  import { DASH, isSteam } from '../../builtinhelpers.js';
+} from 'spectra/helpers';
+  import { MetricTd } from 'spectra/helpers';
+  import { DASH, isSteam } from 'spectra/helpers';
   const SCOREBOARD_COLUMNS = [
     ['kills', S.match.scoreK, 'int'],
     ['deaths', S.match.scoreD, 'int'],

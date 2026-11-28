@@ -107,3 +107,13 @@ test('a function helper inserts its call with the first parameter as a tab stop'
   const dash = SPECTRA_HELPERS.find((h) => h.name === 'dash');
   assert.equal(dash.snippet, false, 'a value helper inserts plainly');
 });
+
+// Import completions: inside an import's braces the surface's names, after `from '` the one module.
+test('import completions offer the surface names inside braces, and the one module after from', async () => {
+  const { componentCompletions } = await import('./editor/helperCatalog.js');
+  const names = componentCompletions("import { ErrorB").map((i) => i.label);
+  assert.ok(names.includes('ErrorBanner'), 'a shared component is offered');
+  assert.ok(names.includes('fmt1'), 'an app helper is offered');
+  assert.equal(componentCompletions("import X from '")[0].label, 'spectra/helpers');
+  assert.equal(componentCompletions("import { fmt1 } from 'sp")[0].label, 'spectra/helpers');
+});

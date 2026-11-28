@@ -1,12 +1,12 @@
 <script>
-  import EmptyNote from '../../components/EmptyNote.svelte';
-  import { openMatch, openRow, whileCurrent, latestOnly, listMetrics, getCareerTrend, errText, inSequence, fmtMetric, fmtPercent, fmtDate, fmtPatch, seed, remember, S } from '../../builtinhelpers.js';
-  import ErrorBanner from '../../components/ErrorBanner.svelte';
+  import { EmptyNote } from 'spectra/helpers';
+  import { openMatch, openRow, whileCurrent, latestOnly, listMetrics, getCareerTrend, errText, inSequence, fmtMetric, fmtPercent, fmtDate, fmtPatch, seed, remember, S } from 'spectra/helpers';
+  import { ErrorBanner } from 'spectra/helpers';
   // Career trend (builtin profile panel): one match-scope metric across the
   // context's player's matches, as a sparkline. The picker offers every
   // match-scope metric in the default sequence and sends the metric NAME to
   // the series read. The picked metric is this panel's own view state.
-  import SuggestInput from '../../components/SuggestInput.svelte';
+  import { SuggestInput } from 'spectra/helpers';
 
   let { spectra, context } = $props();
   const steamId = $derived(context.steamId);

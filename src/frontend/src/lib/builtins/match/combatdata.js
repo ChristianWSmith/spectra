@@ -1,4 +1,4 @@
-  import { getScoreboard, getMatch, getRounds, listedPlayers } from '../../builtinhelpers.js';
+  import { getScoreboard, getMatch, getRounds, listedPlayers } from '../../helperdefs.js';
 // The Combat tab's shared reads (builtins/match: the Kill tags and Clutches
 // panels both use them). The reads are the ones the Combat view always made:
 // a roster from the scoreboard, the match's side switches and tick rate, and

@@ -1,10 +1,10 @@
 <script>
-  import { DASH, matchTab, openReplay, loadThen, whileCurrent, S, getMatch, getScoreboard, getRounds, getHeatmap, errText, getHeatmapKD, HEAT_CORE_KINDS, HEAT_GRENADE_THROW_KINDS, HEAT_GRENADE_DET_KINDS, heatKindLabel, heatRegionFilter, heatRegionTakesBBox, HEAT_STOPS, DEATH_STOPS, rampCss, signedRampCss, loadMapPack, fmt1, fmtInt, isCounted, roundScoreLabel, downloadCanvasPNG, listedPlayers, seed, remember, matchKey, runWork } from '../../builtinhelpers.js';
-  import ErrorBanner from '../../components/ErrorBanner.svelte';
+  import { DASH, matchTab, openReplay, loadThen, whileCurrent, S, getMatch, getScoreboard, getRounds, getHeatmap, errText, getHeatmapKD, HEAT_CORE_KINDS, HEAT_GRENADE_THROW_KINDS, HEAT_GRENADE_DET_KINDS, heatKindLabel, heatRegionFilter, heatRegionTakesBBox, HEAT_STOPS, DEATH_STOPS, rampCss, signedRampCss, loadMapPack, fmt1, fmtInt, isCounted, roundScoreLabel, listedPlayers, seed, remember, matchKey, runWork } from 'spectra/helpers';
+  import { ErrorBanner } from 'spectra/helpers';
   // The signed kd raster has its own Go entry point (heatmap.go
   // GetHeatmapKD) — called on the binding directly; every other kind
   // shares getHeatmap.
-  import HeatmapLayer from '../../components/HeatmapLayer.svelte';
+  import { HeatmapLayer } from 'spectra/helpers';
   // The ONE background-work wrapper (lib/workstate.svelte.js): generate
   // is heavy work the floating indicator shows — wrapping the call site
   // covers BOTH binding paths (GetHeatmap below and GetHeatmapKD) in one
@@ -355,7 +355,7 @@
   async function saveRaster() {
     if (!heatCanvas) return;
     try {
-      await downloadCanvasPNG(heatCanvas, heatRasterName());
+      await spectra.saveCanvasPNG(heatCanvas, heatRasterName());
     } catch (e) {
       error = errText(e);
     }

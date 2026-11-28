@@ -7,7 +7,7 @@
   // Hover warms the cheap profile read (warmProfile); the career trend is never prefetched.
   import { isSteam, openProfile } from '../nav.js';
   import * as S from '../strings/index.js';
-  import { DASH } from '../builtinhelpers.js';
+  import { DASH } from '../helperdefs.js';
   import { warmProfile } from '../services.js';
 
   let { steam = '', name = '', nav = () => {}, title = '', cls = '', variant = 'comb', stopRow = false } = $props();

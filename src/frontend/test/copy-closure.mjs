@@ -17,6 +17,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix } from 'node:path';
 import { compile, compileModule } from 'svelte/compiler';
+import { aliasHelpers } from './helpers-alias.mjs';
 
 const SRC = 'src/lib';
 const IMPORT = /(?:\bfrom\s+|\bimport\s*\(\s*|\bimport\s+)(['"])(\.{1,2}\/[^'"]+)\1/g;
@@ -72,7 +73,7 @@ export function copyClosure({ dir, entries, skip = new Map() }) {
       writeFileSync(dest, serviceStub(readFileSync(abs, 'utf8')));
       continue;
     }
-    const text = readFileSync(abs, 'utf8');
+    const text = aliasHelpers(readFileSync(abs, 'utf8'), abs);
     // Walk the relative imports (only those that stay under src/lib). The generated builtin
     // sources hold panel code as TEXT (JSON strings), so they are copied, never walked.
     const generatedText = rel.startsWith('builtins/generated/');

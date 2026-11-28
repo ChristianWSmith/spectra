@@ -28,6 +28,7 @@ export const components = {
   // Read API refusals (readapi.js).
   metricUnknown: 'No metric named {name}',
   metricLibraryUnavailable: 'Library-wide metric values are not available yet',
+  writeUnavailable: 'This surface cannot change stored data',
   // Binds (readapi.js resolveBinds, bindQuery): one bind given twice, a
   // query bind the surface has no value for, and a value of the wrong shape.
   bindConflict: 'Give the bind {name} once, not twice',

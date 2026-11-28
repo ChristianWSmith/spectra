@@ -1,4 +1,5 @@
 import './compile-worker-node.mjs';
+import { aliasHelpers } from './helpers-alias.mjs';
 import { copyClosure, fillServiceStub } from './copy-closure.mjs';
 // jsdom driver for Combat: the Kill tags card's column order (round →
 // time into round → killer vs victim → distance in metres — no raw-tick
@@ -173,7 +174,7 @@ for (const name of ['EventPlay', 'ProfileLink', 'StatusChip', 'Popover']) {
     // plumbing (Strings Stage 3): these components import the strings
     // catalog — resolve it from the real tree (no-op for the import-less
     // leaves).
-    readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
+    aliasHelpers(readFileSync(`src/lib/components/${name}.svelte`, 'utf8'), `src/lib/components/${name}.svelte`).replace(
       "from '../strings/index.js'",
       `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
     ),
@@ -197,7 +198,7 @@ for (const name of ['EventPlay', 'ProfileLink', 'StatusChip', 'Popover']) {
 // and the strings catalog are rewritten; combatdata.js is plain ESM.
 mkdirSync(join(dir, 'builtins', 'match'), { recursive: true });
 const panelSrc = (name) =>
-  readFileSync(`src/lib/builtins/match/${name}.svelte`, 'utf8')
+  aliasHelpers(readFileSync(`src/lib/builtins/match/${name}.svelte`, 'utf8'), `src/lib/builtins/match/${name}.svelte`)
     .replace(/from '\.\.\/\.\.\/components\/(\w+)\.svelte'/g, "from '../../components/$1.js'")
     // plumbing (Strings Stage 3): the panels import the strings catalog —
     // resolve it from the real tree, like every other ../ module here.

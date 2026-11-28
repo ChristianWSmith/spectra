@@ -12,7 +12,7 @@
 // The empty values (no rows, no names yet) are the same ones a panel shows while
 // its own load runs; a failed own load keeps them, and the frame reports it.
 
-import { loadEconomy } from './builtinhelpers.js';
+import { loadEconomy } from './helperdefs.js';
 import { whileCurrent } from './current.js';
 import * as S from './strings/index.js';
 

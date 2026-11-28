@@ -7,7 +7,7 @@ import '../../test/compile-worker-node.mjs';
 //   - every source passes the save-time check (runes, valid syntax);
 //   - each panel reads through `context` (the mount's match);
 //   - each panel imports only the curated helper surface: the strings catalog
-//     and the names BUILTIN_HELPERS lists for builtinhelpers.js;
+//     and the names BUILTIN_HELPERS lists for the helper surface (spectra/helpers);
 //   - no panel and no Match view code reads a retired preference (ruling 33):
 //     the order/hidden keys, the transposed shape, and the economy readers.
 //     Comments are stripped first.
@@ -104,22 +104,18 @@ test('every panel reads through context', () => {
   }
 });
 
-test('every import is on the curated surface (strings catalog, or a name BUILTIN_HELPERS lists)', () => {
+test('every import is on the curated surface (spectra/helpers, and only its listed names)', () => {
+  const key = 'src/lib/builtinhelpers.js';
+  const helperNames = Object.keys(BUILTIN_HELPERS[key].names);
   for (const id of PANELS) {
     const code = stripComments(sourceOf(id));
     for (const m of code.matchAll(/^\s*import\s+(\*\s+as\s+\w+|\{[^}]*\})\s+from\s+'([^']+)';/gm)) {
       const [, clause, spec] = m;
-      if (spec === '../../strings/index.js') {
-        assert.equal(clause, '* as S', `${id} takes the strings catalog whole, as S`);
-        continue;
-      }
-      // The module must be a registered helper (its key is the path from the
-      // frontend root), and every name it takes must be listed for it.
-      const key = path.posix.normalize(`${builtinSourceDir(id)}/${spec}`);
-      assert.ok(Object.hasOwn(BUILTIN_HELPERS, key), `${id} imports ${spec} (${key}), which is not on the builtin surface`);
-      const helperNames = Object.keys(BUILTIN_HELPERS[key].names);
-      for (const name of clause.slice(1, -1).split(',').map((s) => s.trim()).filter(Boolean)) {
-        assert.ok(helperNames.includes(name), `${id} imports ${name}, which BUILTIN_HELPERS does not list for ${key}`);
+      assert.equal(spec, 'spectra/helpers', `${id} imports ${spec}: a built-in imports only spectra/helpers`);
+      if (clause.startsWith('* as')) continue;
+      for (const name of clause.slice(1, -1).split(',').map((x) => x.trim()).filter(Boolean)) {
+        const bare = name.split(/\s+as\s+/)[0];
+        assert.ok(helperNames.includes(bare), `${id} imports ${bare}, which BUILTIN_HELPERS does not list`);
       }
     }
   }
@@ -132,7 +128,7 @@ test('no panel reads a retired preference (ruling 33, grep)', () => {
       assert.ok(!code.includes(key), `${id} reads the retired key or helper ${key}`);
     }
   }
-  for (const file of ['builtinhelpers.js']) {
+  for (const file of ['builtinhelpers.js', 'helperdefs.js']) {
     const code = stripComments(readFileSync(path.join(HERE, file), 'utf8'));
     for (const key of RETIRED) {
       assert.ok(!code.includes(key), `${file} holds the retired key or helper ${key}`);

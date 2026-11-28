@@ -41,13 +41,6 @@
   import { subscribeWork, dismissWork } from './lib/workstate.svelte.js';
   import { listMatchesPage, listJobs } from './lib/services.js';
   import { WARM_VIEWS, WARM_STEP_MS, loadWarmTargets, onPlacementsChanged } from './lib/warm.js';
-  import * as servicesModule from './lib/services.js';
-  import * as workstateModule from './lib/workstate.svelte.js';
-  import { provideHelperModule } from './lib/componentruntime/compile.js';
-  // Built-in components import these two helpers by name; App already loads
-  // both modules, so it hands them to the helper table once.
-  provideHelperModule('src/lib/services.js', servicesModule);
-  provideHelperModule('src/lib/workstate.svelte.js', workstateModule);
   import * as S from './lib/strings/index.js'; // chrome copy (strings-audit Check B)
   // The ?probe=1 operator readout (frameprobe.js — its entry comment is
   // THE 60-second collection procedure). Same module instance the

@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { installEsmDirHook } from './esm-dir-hook.mjs';
+import { aliasHelpers } from './helpers-alias.mjs';
 
 installEsmDirHook();
 
@@ -75,7 +76,7 @@ function bundle(absPath) {
   if (compiled.has(absPath)) return compiled.get(absPath);
   const out = join(cacheDir, `${String(++seq).padStart(2, '0')}-${absPath.split('/').pop()}.js`);
   compiled.set(absPath, out);
-  const src = readFileSync(absPath, 'utf8').replace(/(from |import\()'(\.{1,2}\/[^']+)'/g, (whole, lead, rel, offset, str) => {
+  const src = aliasHelpers(readFileSync(absPath, 'utf8'), absPath).replace(/(from |import\()'(\.{1,2}\/[^']+)'/g, (whole, lead, rel, offset, str) => {
     // Inside a template literal (a built-in's source text) the import is text, not code: leave it.
     if ((str.slice(0, offset).match(/(?<!\\)`/g) || []).length % 2 === 1) return whole;
     const target = resolve(dirname(absPath), rel);
@@ -93,10 +94,10 @@ const router = await import(pathToFileURL(bundle(resolve('src/lib/router.js'))).
 const vs = await import(pathToFileURL(bundle(resolve('src/lib/viewstate.svelte.js'))).href);
 const S = await import(pathToFileURL(bundle(resolve('src/lib/strings/index.js'))).href);
 const bindings = await import(stub('bindings.mjs'));
-// The app hands its startup modules to the helper table (App.svelte); this driver
-// bundles them, so it provides the bundled copies the same way.
+// The helper surface resolves to its bundled copy (which re-exports the bundled services), so the
+// built-ins' reads reach the driver's script.
 const runtime = await import(pathToFileURL(bundle(resolve('src/lib/componentruntime/compile.js'))).href);
-runtime.provideHelperModule('src/lib/services.js', await import(pathToFileURL(bundle(resolve('src/lib/services.js'))).href));
+runtime.provideHelperModule('src/lib/builtinhelpers.js', await import(pathToFileURL(bundle(resolve('src/lib/builtinhelpers.js'))).href));
 const Harness = (await import(pathToFileURL(harnessBundle).href)).default;
 
 // --- the fixture ----------------------------------------------------------------------

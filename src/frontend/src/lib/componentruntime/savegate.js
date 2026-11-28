@@ -16,7 +16,7 @@ import { checkComponentSource } from './compile.js';
 // reason (refusalText positions it).
 // `builtinDir` (frontend-relative directory of a built-in's source, or null
 // for a user component) selects the built-in rules: its relative imports are
-// curated helpers (compile.js BUILTIN_HELPERS, ruling 45).
+// curated helpers (compile.js BUILTIN_HELPERS, ruling 45). A user component gets the same list.
 export function gateComponentSave(source, builtinDir = null, opts = {}) {
   return checkComponentSource(source, 'Component.svelte', builtinDir, opts);
 }

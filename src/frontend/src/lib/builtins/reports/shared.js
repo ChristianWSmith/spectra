@@ -1,4 +1,4 @@
-import { DASH } from '../../builtinhelpers.js';
+import { DASH } from '../../helperdefs.js';
 // shared.js — the pure parts of the Reports builtin: the saved file's name,
 // the appendix's text forms (Markdown and HTML) and the escaping they need.
 // No state, no services: the component tests and the snapshot runner call

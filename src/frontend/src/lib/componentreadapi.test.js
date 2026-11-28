@@ -242,8 +242,25 @@ test('navigate takes a hash or a path with a query', () => {
 
 test('the API surface is exactly the documented set', () => {
   const { api } = harness();
-  assert.deepEqual(Object.keys(api).sort(), ['guard', 'isHuman', 'listedPlayers', 'metric', 'metricsByMatch', 'navigate', 'query']);
+  assert.deepEqual(Object.keys(api).sort(), ['freeDemoCopy', 'guard', 'isHuman', 'listedPlayers', 'metric', 'metricsByMatch', 'navigate', 'query', 'saveCanvasPNG', 'saveText']);
   assert.ok(Object.isFrozen(api));
+});
+
+// ---- the one write (freeDemoCopy) ------------------------------------------
+test('freeDemoCopy calls the wired write with the match id as a number', async () => {
+  const calls = [];
+  const api = createReadApi({
+    reads: {},
+    writes: { freeDemoCopy: async (id) => (calls.push(id), 42) },
+    report: () => {},
+  });
+  assert.equal(await api.freeDemoCopy('7'), 42);
+  assert.deepEqual(calls, [7]);
+});
+
+test('freeDemoCopy refuses when no write is wired', async () => {
+  const api = createReadApi({ reads: {}, report: () => {} });
+  await assert.rejects(api.freeDemoCopy(7), /cannot change stored data/);
 });
 
 // ---- in-flight dedupe and the series read (S13) -----------------------------
@@ -405,4 +422,22 @@ test('metricsByMatch refuses an unknown metric name', async () => {
   await assert.rejects(metricsByMatch(reads, '7656', ['nope'], [5]), {
     message: S.fill(S.components.metricUnknown, { name: 'nope' }),
   });
+});
+
+test('saveText and saveCanvasPNG call the wired writes, and refuse when none is wired', async () => {
+  const calls = [];
+  const api = createReadApi({
+    reads: {},
+    writes: {
+      saveText: async (f, m, t) => (calls.push(['text', f, m, t]), '/out/' + f),
+      saveCanvasPNG: async (c, f) => (calls.push(['png', c, f]), '/out/' + f),
+    },
+    report: () => {},
+  });
+  assert.equal(await api.saveText('a.csv', 'text/csv', 'x,y'), '/out/a.csv');
+  assert.equal(await api.saveCanvasPNG('canvas', 'h.png'), '/out/h.png');
+  assert.deepEqual(calls, [['text', 'a.csv', 'text/csv', 'x,y'], ['png', 'canvas', 'h.png']]);
+  const bare = createReadApi({ reads: {}, report: () => {} });
+  await assert.rejects(bare.saveText('a.csv', 'text/csv', ''), /cannot change stored data/);
+  await assert.rejects(bare.saveCanvasPNG({}, 'h.png'), /cannot change stored data/);
 });

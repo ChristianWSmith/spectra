@@ -10,17 +10,23 @@
 // bundled, and their text is never read as an import.
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { aliasHelpers } from './helpers-alias.mjs';
 
 const reaching = new Map();
 
 export function reachesSvelte(absPath, seen = new Set()) {
   if (absPath.includes('/generated/')) return false;
+  // The helper surface's definitions are always bundled: the built-ins reach them through
+  // shared.js and the other helper modules, and they must share the bundled services instance
+  // the driver scripts (not the real one), even though helperdefs.js itself imports no .svelte.
+  if (absPath.endsWith('/src/lib/helperdefs.js')) return true;
   if (reaching.has(absPath)) return reaching.get(absPath);
   if (seen.has(absPath)) return false;
   seen.add(absPath);
-  const text = readFileSync(absPath, 'utf8');
+  const text = aliasHelpers(readFileSync(absPath, 'utf8'), absPath);
   let hit = /from '[^']*\.svelte'/.test(text);
-  for (const m of text.matchAll(/from '(\.{1,2}\/[^']+)'/g)) {
+  // A dynamic import('…') counts like a static one: compile.js loads the helper surface that way.
+  for (const m of text.matchAll(/(?:from |import\()'(\.{1,2}\/[^']+)'/g)) {
     if (hit) break;
     const target = resolve(dirname(absPath), m[1]);
     // A runes module (one that uses $state, $derived, $effect or $props) has to be compiled, so a

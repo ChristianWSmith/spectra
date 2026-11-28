@@ -1,13 +1,13 @@
 <script>
-  import { compareAsc, fmtInt, S } from '../../builtinhelpers.js';
-  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
-  import { splitTable } from './splittable.svelte.js';
+  import { compareAsc, fmtInt, S } from 'spectra/helpers';
+  import { EmptyTableRow } from 'spectra/helpers';
+  import { splitTable } from 'spectra/helpers';
   // Weapons (builtin profile panel): kills, damage and headshots per weapon,
   // each cell one stored partitioned read for the context's player (the dim
   // is the weapon). Top rows by kills, then damage, then name.
   // Weapon damage is a tick-join builtin (ruling 24).
-  import MetricTd from '../../components/MetricTd.svelte';
-  import { dimsOf } from './shared.js';
+  import { MetricTd } from 'spectra/helpers';
+  import { dimsOf } from 'spectra/helpers';
 
   let { spectra, context } = $props();
   const steamId = $derived(context.steamId);

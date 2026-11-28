@@ -25,6 +25,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { installEsmDirHook } from './esm-dir-hook.mjs';
+import { aliasHelpers } from './helpers-alias.mjs';
 
 installEsmDirHook();
 
@@ -101,7 +102,7 @@ function bundle(absPath) {
   // Static and dynamic relative imports both: a built-in's helper modules are
   // loaded by the registry's dynamic import (compile.js), and must be the same
   // bundled instance the static imports reach.
-  const src = readFileSync(absPath, 'utf8').replace(/(from |import\()'(\.{1,2}\/[^']+)'/g, (whole, lead, rel, offset, str) => {
+  const src = aliasHelpers(readFileSync(absPath, 'utf8'), absPath).replace(/(from |import\()'(\.{1,2}\/[^']+)'/g, (whole, lead, rel, offset, str) => {
     // Inside a template literal (a built-in's source text) the import is text, not code: leave it.
     if ((str.slice(0, offset).match(/(?<!\\)`/g) || []).length % 2 === 1) return whole;
     const target = resolve(dirname(absPath), rel);
@@ -113,10 +114,10 @@ function bundle(absPath) {
   return out;
 }
 const harnessBundle = bundle(resolve('test/match-panels.harness.svelte'));
-// The app hands its startup modules to the helper table (App.svelte): the Details panel reads the match
-// services through it, so this driver provides the bundled services module the same way.
+// The helper surface resolves to its bundled copy (which re-exports the bundled services), so the
+// built-ins' reads reach the driver's script.
 const runtime = await import(pathToFileURL(bundle(resolve('src/lib/componentruntime/compile.js'))).href);
-runtime.provideHelperModule('src/lib/services.js', await import(pathToFileURL(bundle(resolve('src/lib/services.js'))).href));
+runtime.provideHelperModule('src/lib/builtinhelpers.js', await import(pathToFileURL(bundle(resolve('src/lib/builtinhelpers.js'))).href));
 
 const { mount, unmount, flushSync } = await import('svelte');
 // The Match panels are Svelte builtins: their sources are the .svelte files, and

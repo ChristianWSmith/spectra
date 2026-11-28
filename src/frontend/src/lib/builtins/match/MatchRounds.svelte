@@ -1,8 +1,8 @@
 <script>
-  import { openReplay, matchPath, entryLoopSpan, openRow, CONTROL_SELECTOR, whileCurrent, S } from '../../builtinhelpers.js';
-  import { sideSwitchesOf } from '../../builtinhelpers.js';
-  import EmptyNote from '../../components/EmptyNote.svelte';
-  import { roundSideClassOf, namesOf, rosterOf } from '../../builtinhelpers.js';
+  import { openReplay, matchPath, entryLoopSpan, openRow, CONTROL_SELECTOR, whileCurrent, S } from 'spectra/helpers';
+  import { sideSwitchesOf } from 'spectra/helpers';
+  import { EmptyNote } from 'spectra/helpers';
+  import { roundSideClassOf, namesOf, rosterOf } from 'spectra/helpers';
   import {
     SQL_ROSTER,
     SQL_TEAMS,
@@ -19,10 +19,10 @@
     roundLabel,
     fmtDuration,
     roundOf,
-  } from './panelhelpers.js';
-  import WinnerCell from '../../components/WinnerCell.svelte';
-  import ProfileLink from '../../components/ProfileLink.svelte';
-  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
+  } from 'spectra/helpers';
+  import { WinnerCell } from 'spectra/helpers';
+  import { ProfileLink } from 'spectra/helpers';
+  import { EmptyTableRow } from 'spectra/helpers';
   import {
   DASH,
   separatorFlags,
@@ -35,7 +35,7 @@
   chatClock,
   chatTag,
   fmtInt,
-} from '../../builtinhelpers.js';
+} from 'spectra/helpers';
 
   const COPY = Object.freeze({
     colWatch: S.match.colWatch,

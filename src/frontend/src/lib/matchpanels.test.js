@@ -4,7 +4,7 @@ import '../../test/compile-worker-node.mjs';
 //   - it is registered as a builtin, under the builtin namespace;
 //   - it reads through `context` (the mount's match) and mounts nothing else;
 //   - it imports only the curated helper surface: the strings catalog, and the
-//     names BUILTIN_HELPERS lists for its module;
+//     names BUILTIN_HELPERS lists for the helper surface;
 //   - no panel, and no Match view code, reads a retired preference (ruling 33:
 //     order, hidden, the economy placement, the transposed shape, and the
 //     retired localStorage keys).
@@ -81,49 +81,17 @@ test('every panel reads through context and mounts nothing else', () => {
   }
 });
 
-test('every import is on the curated surface (strings catalog, or a name BUILTIN_HELPERS lists)', () => {
-  const helperKey = 'src/lib/builtins/match/panelhelpers.js';
-  const helperNames = Object.keys(BUILTIN_HELPERS[helperKey].names);
-  const surfaces = {
-    '../../strings/index.js': null,
-    './panelhelpers.js': helperNames,
-    '../../builtinhelpers.js': Object.keys(BUILTIN_HELPERS['src/lib/builtinhelpers.js'].names),
-    '../../services.js': ['getMatch', 'getVoicePresence', 'evictDemoCopy', 'getProvenance', 'getEntitySummary', 'errText'],
-    // The shared status chip (a component, not copy): a panel shows a read's status with it.
-    '../../components/StatusChip.svelte': 'default',
-    // The loading shell (a component too): a card holds its space and shows its own spinner.
-    '../../components/LoadBox.svelte': 'default',
-  };
+test('every import is on the curated surface (spectra/helpers, and only its listed names)', () => {
+  const helperNames = Object.keys(BUILTIN_HELPERS['src/lib/builtinhelpers.js'].names);
   for (const id of Object.keys(PANELS)) {
     const src = builtinShippedSource(id);
     for (const m of src.matchAll(/^\s*import\s+(\*\s+as\s+\w+|\{[^}]*\}|\w+)\s+from\s+'([^']+)';/gm)) {
       const [, clause, spec] = m;
-      // A module the hand list does not name is checked against the registry: its
-      // key is its path from the frontend root, and it must list each name it is given.
-      const registryKey = path.posix.normalize(`${builtinSourceDir(id)}/${spec}`);
-      const fromRegistry = Object.hasOwn(BUILTIN_HELPERS, registryKey) ? BUILTIN_HELPERS[registryKey].names : null;
-      assert.ok(spec in surfaces || fromRegistry, `${id} imports ${spec}, which is not on the builtin surface`);
-      if (!(spec in surfaces)) {
-        if (fromRegistry.default) {
-          assert.equal(clause, spec.split('/').pop().replace('.svelte', ''), `${id} takes ${spec} under its own name`);
-          continue;
-        }
-        if (clause.startsWith('* as')) continue;
-        for (const name of clause.slice(1, -1).split(',').map((x) => x.trim()).filter(Boolean)) {
-          assert.ok(Object.hasOwn(fromRegistry, name), `${id} imports ${name} from ${spec}, which is not listed`);
-        }
-        continue;
-      }
-      if (surfaces[spec] === 'default') {
-        assert.equal(clause, spec.split('/').pop().replace('.svelte', ''), `${id} takes ${spec} under its own name`);
-        continue;
-      }
-      if (surfaces[spec] === null) {
-        assert.equal(clause, '* as S', `${id} takes the strings catalog whole, as S`);
-        continue;
-      }
-      for (const name of clause.slice(1, -1).split(',').map((s) => s.trim()).filter(Boolean)) {
-        assert.ok(surfaces[spec].includes(name), `${id} imports ${name} from ${spec}, which is not listed`);
+      // A built-in imports one module: the helper surface. Relative paths and app modules are refused.
+      assert.equal(spec, 'spectra/helpers', `${id} imports ${spec}: a built-in imports only spectra/helpers`);
+      for (const name of clause.slice(1, -1).split(',').map((x) => x.trim()).filter(Boolean)) {
+        const bare = name.split(/\s+as\s+/)[0];
+        assert.ok(helperNames.includes(bare), `${id} imports ${bare}, which BUILTIN_HELPERS does not list`);
       }
     }
   }

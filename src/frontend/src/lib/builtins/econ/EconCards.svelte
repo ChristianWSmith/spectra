@@ -1,12 +1,12 @@
 <script>
-  import { openReplay, matchTab, economySource, whileCurrent, S, fmtMetric } from '../../builtinhelpers.js';
-  import StatCard from '../../components/StatCard.svelte';
+  import { openReplay, matchTab, economySource, whileCurrent, S, fmtMetric } from 'spectra/helpers';
+  import { StatCard } from 'spectra/helpers';
   import {
   DASH,
   roundStartTick,
   roundEndTick,
   entryLoopSpan,
-} from '../../builtinhelpers.js';
+} from 'spectra/helpers';
   const ECON_CARDS = [
     {
       metric: 'pistol_hold',

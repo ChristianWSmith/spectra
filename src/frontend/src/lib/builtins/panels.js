@@ -22,7 +22,7 @@ import CombatKillTags from './match/CombatKillTags.svelte';
 import CombatClutches from './match/CombatClutches.svelte';
 import MatchTabs from './match/MatchTabs.svelte';
 // The Economy and Utility tabs: a composer and the panels it mounts. The
-// helpers they import are in ../builtinhelpers.js.
+// helpers they import are on the spectra/helpers surface.
 import EconomyView from './econ/Economy.svelte';
 import EconCurve from './econ/EconCurve.svelte';
 import EconCards from './econ/EconCards.svelte';

@@ -1,5 +1,5 @@
 <script>
-  import { DASH } from '../builtinhelpers.js';
+  import { DASH } from '../helperdefs.js';
   import { stepActive, onListKey, scrollActive } from '../listnav.js';
   // Player selector for the Reports target panel — the native <select>
   // ("rep-player") replacement, styled to MatchPicker: the trigger shows

@@ -1,16 +1,16 @@
 <script>
-  import EmptyNote from '../../components/EmptyNote.svelte';
-  import { DASH, S, getClutches, entryLoopSpanAround, matchRecord } from '../../builtinhelpers.js';
-  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
+  import { EmptyNote } from 'spectra/helpers';
+  import { DASH, S, getClutches, entryLoopSpanAround, matchRecord } from 'spectra/helpers';
+  import { EmptyTableRow } from 'spectra/helpers';
   // Combat · Clutches. The detected 1vN
   // situations of the match (size, player, outcome, bomb state, HP left).
   // The won / lost toggles select which outcomes are listed: won ON and lost
   // OFF by default. It reads the match from `context`; the loop-length pref
   // stays a plain pref (ruling 33).
-  import EventPlay from '../../components/EventPlay.svelte';
-  import ProfileLink from '../../components/ProfileLink.svelte';
-  import { combatPanel } from './combatpanel.svelte.js';
-  import { clutchKillTicks } from './combatmodel.js';
+  import { EventPlay } from 'spectra/helpers';
+  import { ProfileLink } from 'spectra/helpers';
+  import { combatPanel } from 'spectra/helpers';
+  import { clutchKillTicks } from 'spectra/helpers';
 
   let { spectra, context } = $props();
   const id = $derived(context.matchId);

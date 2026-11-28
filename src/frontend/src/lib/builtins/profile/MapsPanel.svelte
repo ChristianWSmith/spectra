@@ -1,12 +1,12 @@
 <script>
-  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
-  import { DASH, compareAsc, openRow, fmt1, S } from '../../builtinhelpers.js';
-  import { splitTable } from './splittable.svelte.js';
+  import { EmptyTableRow } from 'spectra/helpers';
+  import { DASH, compareAsc, openRow, fmt1, S } from 'spectra/helpers';
+  import { splitTable } from 'spectra/helpers';
   // Per-map breakdown (builtin profile panel): matches, wins and ADR per map,
   // each cell one stored partitioned read for the context's player (the dim
   // is the map). A row opens the Library filtered to this player and map.
-  import MetricTd from '../../components/MetricTd.svelte';
-  import { dimsOf } from './shared.js';
+  import { MetricTd } from 'spectra/helpers';
+  import { dimsOf } from 'spectra/helpers';
 
   let { spectra, context } = $props();
   const steamId = $derived(context.steamId);

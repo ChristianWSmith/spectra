@@ -327,8 +327,8 @@ check(
   '',
 );
 check(
-  'roundScoreLabel comes through builtinhelpers.js (the one module a built-in takes its helpers from)',
-  /import \{[^}]*\broundScoreLabel\b[^}]*\} from '\.\.\/\.\.\/builtinhelpers\.js'/.test(heatSrc),
+  'roundScoreLabel comes through spectra/helpers (the one module a built-in takes its helpers from)',
+  /import \{[^}]*\broundScoreLabel\b[^}]*\} from 'spectra\/helpers'/.test(heatSrc),
   '',
 );
 
@@ -1096,9 +1096,8 @@ console.log('P. Heatmaps view: floor <select>, controls+content card, floating G
     `${panelAt} ${floatAt} ${saveGateAt} ${saveAt} ${genAt} ${panelEnd}`,
   );
   check(
-    'Save path: downloadCanvasPNG (THE canonical download) over the bridged canvas, dated heatmap-<map>-<date>.png name',
-    /import \{[^}]*\bdownloadCanvasPNG\b[^}]*\} from '\.\.\/\.\.\/builtinhelpers\.js'/.test(heatSrc) &&
-      /await downloadCanvasPNG\(heatCanvas, heatRasterName\(\)\)/.test(heatSrc) &&
+    'Save path: spectra.saveCanvasPNG (the prop, which calls the canonical download) over the bridged canvas, dated heatmap-<map>-<date>.png name',
+    /await spectra\.saveCanvasPNG\(heatCanvas, heatRasterName\(\)\)/.test(heatSrc) &&
       /`heatmap-\$\{map \|\| 'map'\}-\$\{stamp\}\.png`/.test(heatSrc),
     '',
   );

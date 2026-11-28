@@ -1,5 +1,5 @@
 <script>
-  import { DASH } from '../builtinhelpers.js';
+  import { DASH } from '../helperdefs.js';
   import { stepActive } from '../listnav.js';
   // M5 command palette: Ctrl/Cmd-K overlay with fuzzy search
   // across nav actions, matches, players, saved filters, metrics and saved

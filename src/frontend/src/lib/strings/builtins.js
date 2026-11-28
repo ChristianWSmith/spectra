@@ -1,5 +1,5 @@
 // strings/builtins.js — copy the builtin panels share: the state words a metric cell shows, the round and unit labels
-// the panel helpers (builtinhelpers.js, builtins/match/panelhelpers.js) print. A key lives
+// the panel helpers (helperdefs.js, builtins/match/panelhelpers.js) print. A key lives
 // here when two or more builtin panels read it, or when a helper block is the
 // only place it is shown; a key one panel alone owns lives in that panel's
 // area module (match.js, economy.js, utility.js, …).

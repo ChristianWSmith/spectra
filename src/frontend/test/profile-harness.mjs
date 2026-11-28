@@ -14,6 +14,7 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { registerHooks } from 'node:module';
 import { installEsmDirHook } from './esm-dir-hook.mjs';
+import { aliasHelpers } from './helpers-alias.mjs';
 
 const stub = (name) => pathToFileURL(join('test', 'stubs', name)).href;
 
@@ -69,11 +70,11 @@ export async function boot(cacheName = 'profile-panels') {
     if (bundled.has(absPath)) return bundled.get(absPath);
     const out = join(dir, `${String(++seq).padStart(3, '0')}-${absPath.split('/').pop()}.js`);
     bundled.set(absPath, out);
-    const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
+    const src = aliasHelpers(readFileSync(absPath, 'utf8'), absPath).replace(/(from |import\()'(\.{1,2}\/[^']+)'/g, (whole, lead, rel) => {
       const target = resolve(dirname(absPath), rel);
-      if (target.endsWith('.svelte') || target.endsWith('.svelte.js')) return `from '${pathToFileURL(bundle(target)).href}'`;
-      if (target.endsWith('.js') && importsSvelte(target)) return `from '${pathToFileURL(bundle(target)).href}'`;
-      return `from '${pathToFileURL(target).href}'`;
+      if (target.endsWith('.svelte') || target.endsWith('.svelte.js')) return `${lead}'${pathToFileURL(bundle(target)).href}'`;
+      if (target.endsWith('.js') && importsSvelte(target)) return `${lead}'${pathToFileURL(bundle(target)).href}'`;
+      return `${lead}'${pathToFileURL(target).href}'`;
     });
     if (absPath.endsWith('.svelte')) writeFileSync(out, compile(src, { filename: absPath, generate: 'client' }).js.code);
   else if (absPath.endsWith('.svelte.js')) writeFileSync(out, compileModule(src, { filename: absPath, generate: 'client' }).js.code);
@@ -84,7 +85,7 @@ export async function boot(cacheName = 'profile-panels') {
 
   const { mount, unmount, flushSync } = await import('svelte');
   const bindings = await import('./stubs/bindings.mjs');
-  const services = await import(pathToFileURL(resolve('src/lib/services.js')).href);
+  const services = await import(pathToFileURL(bundle(resolve('src/lib/services.js'))).href);
   const ComponentFrame = (await import(pathToFileURL(frameBundle).href)).default;
   const panelsMod = await import(pathToFileURL(bundle(resolve('src/lib/builtins/panels.js'))).href);
 

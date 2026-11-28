@@ -23,6 +23,7 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { installEsmDirHook } from './esm-dir-hook.mjs';
 import { reachesSvelte } from './bundle-reach.mjs';
+import { aliasHelpers } from './helpers-alias.mjs';
 
 installEsmDirHook();
 
@@ -79,15 +80,15 @@ function bundle(absPath) {
   if (compiled.has(absPath)) return compiled.get(absPath);
   const out = join(cacheDir, `${String(++seq).padStart(2, '0')}-${absPath.split('/').pop()}.js`);
   compiled.set(absPath, out);
-  const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
+  const src = aliasHelpers(readFileSync(absPath, 'utf8'), absPath).replace(/(from |import\()'(\.{1,2}\/[^']+)'/g, (whole, lead, rel) => {
     const target = resolve(dirname(absPath), rel);
-    if (target.endsWith('.svelte') || target.endsWith('.svelte.js')) return `from '${pathToFileURL(bundle(target)).href}'`;
+    if (target.endsWith('.svelte') || target.endsWith('.svelte.js')) return `${lead}'${pathToFileURL(bundle(target)).href}'`;
     // A .js that reaches a .svelte through its own imports (resolve.js → builtins/panels.js)
     // is rewritten like its importer; every other .js stays where it is.
     if (target.endsWith('.js') && reachesSvelte(target)) {
-      return `from '${pathToFileURL(bundle(target)).href}'`;
+      return `${lead}'${pathToFileURL(bundle(target)).href}'`;
     }
-    return `from '${pathToFileURL(target).href}'`;
+    return `${lead}'${pathToFileURL(target).href}'`;
   });
   if (absPath.endsWith('.svelte')) writeFileSync(out, compile(src, { filename: absPath, generate: 'client' }).js.code);
   else if (absPath.endsWith('.svelte.js')) writeFileSync(out, compileModule(src, { filename: absPath, generate: 'client' }).js.code);
@@ -225,7 +226,7 @@ PLACEMENTS = {};
 // --- F. an edit that imports a curated helper (ruling 45) --------------------
 console.log('F. an edit that imports a helper');
 const HELPER_EDIT = `<script>
-  import { fmt1 } from '../../fmt.js';
+  import { fmt1 } from 'spectra/helpers';
   let { spectra } = $props();
 </script>
 <p class="helper-marker">{fmt1(2.5)}</p>`;

@@ -1,12 +1,12 @@
 <script>
-  import { indexBy, groupBy, compareAsc, latestOnly, whileCurrent, listReportTemplates, listPlayers, getRounds, listMetrics, getMetricComputeState, errText, getScoreboard, getMetricValuesForMatch, renderReport, getPlayerRefs, listedPlayers, seed, remember, S, inSequence, composedSequence, rawItems, isRawId, metricPresentation, metricStateTitle, liveMetricState, liveMetrics, downloadText } from '../../builtinhelpers.js';
-  import EmptyNote from '../../components/EmptyNote.svelte';
-  import { DASH } from '../../builtinhelpers.js';
-  import ErrorBanner from '../../components/ErrorBanner.svelte';
-  import PlayerPicker from '../../components/PlayerPicker.svelte';
-  import { findTemplate, reportFilename, targetReady, compositeText } from './shared.js';
-  import TokenSelect from '../../components/TokenSelect.svelte';
-  import StatusChip from '../../components/StatusChip.svelte';
+  import { indexBy, groupBy, compareAsc, latestOnly, whileCurrent, listReportTemplates, listPlayers, getRounds, listMetrics, getMetricComputeState, errText, getScoreboard, getMetricValuesForMatch, renderReport, getPlayerRefs, listedPlayers, seed, remember, S, inSequence, composedSequence, rawItems, isRawId, metricPresentation, metricStateTitle, liveMetricState, liveMetrics } from 'spectra/helpers';
+  import { EmptyNote } from 'spectra/helpers';
+  import { DASH } from 'spectra/helpers';
+  import { ErrorBanner } from 'spectra/helpers';
+  import { PlayerPicker } from 'spectra/helpers';
+  import { findTemplate, reportFilename, targetReady, compositeText } from 'spectra/helpers';
+  import { TokenSelect } from 'spectra/helpers';
+  import { StatusChip } from 'spectra/helpers';
 
   // The Reports builtin: the match
   // report's surface, composed from its panels. It owns the report's loads
@@ -408,7 +408,7 @@
       const html = (tpl.format || 'md') === 'html';
       // The stats appendix is a per-match table; a career document carries none.
       const body = tpl.scope === 'profile' ? text || '' : compositeText(text || '', exportEntries, tpl.format);
-      await downloadText(
+      await spectra.saveText(
         reportFilename(tpl, { matchId, steamId: m.steamId, roundNo: m.roundNo }),
         html ? 'text/html' : 'text/markdown',
         body,

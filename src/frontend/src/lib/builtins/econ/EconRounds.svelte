@@ -1,7 +1,7 @@
 <script>
-  import { bySide, openReplay, matchTab, openRoundsTab, economySource, whileCurrent, S } from '../../builtinhelpers.js';
-  import EmptyNote from '../../components/EmptyNote.svelte';
-  import WinnerCell from '../../components/WinnerCell.svelte';
+  import { bySide, openReplay, matchTab, openRoundsTab, economySource, whileCurrent, S } from 'spectra/helpers';
+  import { EmptyNote } from 'spectra/helpers';
+  import { WinnerCell } from 'spectra/helpers';
   import {
   DASH,
   fmtInt,
@@ -12,7 +12,7 @@
   roundWinnerName,
   lossPips,
   entryLoopSpan,
-} from '../../builtinhelpers.js';
+} from 'spectra/helpers';
 
   // Economy rounds: one row per counted round. Deaths are the stored round-grain
   // metric raw_player_round_deaths, read per round and summed per side; a round

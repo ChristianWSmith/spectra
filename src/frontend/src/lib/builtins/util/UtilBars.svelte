@@ -1,5 +1,5 @@
 <script>
-  import { groupBy, sideBySteam, S } from '../../builtinhelpers.js';
+  import { groupBy, sideBySteam, S } from 'spectra/helpers';
   // Utility per-round bars, one card per measure: `measure` is 'damage' (utility
   // damage) or 'blind' (blind time). One bar per team per round, its colour the
   // side that team held that round, one team striped. The card hides when the
@@ -11,7 +11,7 @@
     teamStartClass,
     sideAtRound,
     sideClassOf,
-  } from '../../builtinhelpers.js';
+  } from 'spectra/helpers';
 
   let {
     spectra,

@@ -1,3 +1,4 @@
+import { aliasHelpers } from './helpers-alias.mjs';
 import { warm, compileIdle } from './compile-worker-node.mjs';
 await warm();
 // jsdom driver for the match-details table consistency pass: the Rounds
@@ -192,7 +193,7 @@ function build(rel) {
   if (built.has(rel)) return;
   built.add(rel);
   const abs = join(LIB, rel);
-  const src = readFileSync(abs, 'utf8');
+  const src = aliasHelpers(readFileSync(abs, 'utf8'), abs);
   if (rel === 'services.js') {
     mkdirSync(dirname(join(dir, rel)), { recursive: true });
     writeFileSync(join(dir, rel), servicesStub());
